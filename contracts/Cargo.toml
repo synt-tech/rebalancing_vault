@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["cl_aquarius", "null_router"]
+
+[workspace.dependencies]
+soroban-sdk = "22.0.3"
+defindex-strategy-core = { path = "../../defindex/apps/contracts/strategies/core", package = "defindex-strategy-core" }
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true

@@ -33,6 +33,83 @@ The measured cost of doing this badly, from our own account:
 So the vault productizes order management: contract custody + policy
 on-chain, strategy off-chain, atomic rebalances.
 
+## The goal: a pooled share-token vault on Soroban
+
+The hackathon project builds and deploys a **public share-token vault**
+for Aquarius concentrated pools — the "deposit-and-forget" LP pattern that
+made concentrated liquidity usable for ordinary users on every chain where
+it shipped:
+
+- A user deposits tokens (eventually single-sided), and receives a
+  fungible **vault-share token** — a pro-rata claim on the managed
+  position plus accrued fees and rewards. No ranges to pick, no bundles to
+  sign, no trigger config.
+- The contract owns the CL position(s); an off-chain keeper rebalances
+  inside on-chain policy bounds; swap fees and AQUA rewards compound back
+  into the share price.
+- One deposit tx in, one withdraw tx out — the vault absorbs the
+  order-management complexity CL introduced.
+
+This is the pattern that won wherever it shipped:
+
+- **Gamma Hypervisor** (Uniswap V3 / Algebra): the archetype — dual
+  base+limit positions behind fungible shares, deployed as the built-in
+  "automated liquidity" option inside QuickSwap, Camelot, Saucerswap.
+- **Kamino** (Solana, Orca/Raydium/Meteora): the dominant LP product on
+  Solana — kToken shares, auto-rebalance, auto-compound, single-sided
+  deposits.
+- **Beefy CLM**: whitelisted-keeper variant with calm-period TWAP guards.
+- **Charm Alpha Vaults**: the original (2021) — share token over a
+  full-range + base + limit 3-position structure.
+- **DeFindex**: the only Stellar-native vault protocol — SEP-41 share
+  vaults with pluggable strategies, but **no CL strategy exists today**;
+  that gap is the hackathon opportunity.
+
+### Don't reinvent: host it as a DeFindex strategy
+
+Rather than building our own share-token vault, the plan is to write the
+CL position manager as a **DeFindex strategy** and let their audited
+vault do the pooled-custody work (local clone: `defindex/`):
+
+- **What a strategy is** (`apps/contracts/strategies/core/src/lib.rs`):
+  six methods — `deposit`/`withdraw`/`balance` in underlying-asset terms,
+  `harvest(from, data)` as the permissioned active-action hook ("claiming
+  and compounding rewards, rebalancing a drifting position, rolling an
+  expiring one" — their docs literally describe our rebalance). `data` is
+  an opaque blob conventionally a min-out.
+- **Mapping for CL**: single-asset vault (e.g. sUSD) holding one
+  `cl_aquarius` strategy. The strategy internally owns the CL position:
+  deposit swaps/pairs sUSD→(AQUA,sUSD)→`deposit_position`; `balance()`
+  reports position value in sUSD at the pool's own `sqrt_price_x96`
+  (their rule: underlying-asset value at live rate, never shares);
+  `harvest` = keeper entry for claim-fees/compound/re-range; `withdraw`
+  unwinds pro-rata + swaps back to sUSD.
+- **What we get free**: dfToken share minting + proportional multi-asset
+  share math, fee locking/distribution (`vaultFee` on yield, `defindexFee`
+  = their share *of* our fee), Manager/Emergency/Rebalance-manager roles,
+  `rescue()`/pause unwind-to-idle, per-strategy performance `report`s,
+  factory deployment, public API (vault metrics/APY/user positions/tx
+  history) for the frontend — and an **OtterSec-audited** vault
+  (`defindex/audits/`). Our audit surface shrinks to just the strategy.
+- **What we keep from rocky-vault**: the whole strategy engine —
+  keeper+`RebalancePlan` validation (allowlists, hops, expiry, tick
+  drift, range width), `fair_in` slippage clamp, share_bps inventory
+  band, atomic withdraw→swap→deposit — moves *inside* the strategy
+  contract as init_args config + `harvest`-time checks.
+- **Caveats to verify**: deposit/withdraw pairing swaps now land
+  per-user (mitigate by depositing at the position's current ratio and
+  swapping only the deficit); `rescue()` must tolerate a full
+  unwind+swap; DeFindex terms/protocol fee for a custom strategy;
+  `from.require_auth()` means the vault authorizes every call — auth
+  paths differ from rocky-vault's direct-invoker flow and need a
+  real-auth test.
+
+Why it matters specifically here: on the other chains the share-vault
+absorbed the exact pain we measured on our own account (out-of-range =
+zero yield, manual rebalances leaking ~3.5 sUSD/tx). Stellar has CL pools
+(Aquarius, Sushi V3) but no share-vault product — today the only way to LP
+is hand-managing positions.
+
 ### Aquarius specifics that shape the design
 
 - Pools: `sqrt_price_x96` (Q64.96), ticks = 1.0001^tick; fee tiers
@@ -83,8 +160,11 @@ route live. Testnet keys exist in the stellar CLI: `admin`, `rocky-keeper`.
   exit" optimal on every pool measured; early triggers paid the swap leak
   2–3× more often for ≤ ~5% less divergence. Volatility-scaling belongs in
   the **width**, not the trigger.
-- **No public share tokens yet** — share inflation/donation and fee
-  accounting are where the EVM corpses are buried.
+- **Prototype was private; the product adds the share layer — via
+  DeFindex** — the custody/keeper/validation spine stays as built and
+  testnet-proven; the share minting, donation/inflation guards, fee
+  accounting, roles and rescue come from their audited vault instead of
+  new code. See "Don't reinvent" above.
 
 ## Venue adapters
 
@@ -104,12 +184,20 @@ route live. Testnet keys exist in the stellar CLI: `admin`, `rocky-keeper`.
 | `security/Aquarius-security-review/` | Aquarius `soroban-amm` local working copy (upstream repo private — unmatched-to-deployed reference) |
 | `synt_dex/rocky-rebalancer/` | **rocky-vault prototype** — contract (`contracts/rocky-vault/`), tests, testnet deployment notes (README), pinned reference sources under `reference/` (extracted from `synt_tech_website.zip`; gitignored, regenerable) |
 | `rebalance_concentrated_positions_wrapper.py` | the manual rebalance flow the vault replaces |
+| `../defindex/` | DeFindex local clone — audited vault + strategy trait (`apps/contracts/strategies/core/`) + Blend/hodl/soroswap example strategies; the share-vault infra we plug into |
+| `reference/vault_docs/defindex/` | DeFindex docs corpus (76 pages): build-a-strategy guide, roles, fees, API |
 
 ## Open questions / TODO
 
-- [ ] Vault product shape for the demo: private single position
-      (rocky-vault shape) vs public share-token vault (needs
-      donation/inflation guards + fee accounting).
+- [ ] ~~Vault product shape~~ → decided: public share-token vault hosted
+      as a **DeFindex strategy** (see "Don't reinvent"). TODO: write
+      `cl_aquarius` implementing `DeFindexStrategyTrait` — port the
+      rocky-vault policy engine inside (plan validation, fair_in clamp,
+      share_bps band), internal pairing swaps on deposit/withdraw,
+      `balance()` in underlying at pool ref price, keeper `harvest` for
+      claim/compound/re-range, rescue-safe full unwind. Verify: DeFindex
+      protocol-fee terms for custom strategies, real-auth tests for
+      vault→strategy→pool call chains.
 - [ ] Sushi adapter — how close to Uni-V3 semantics is the deployed pool?
       rocky-vault's own notes flag NFT positions, oracle hints and a
       different swap ABI as the deltas to resolve; skim `sushi-stellar-*`

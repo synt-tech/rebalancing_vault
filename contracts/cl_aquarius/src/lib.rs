@@ -74,13 +74,17 @@ fn require_keeper(e: &Env, from: &Address, vault: &Address) -> Result<(), Strate
 
 #[contractimpl]
 impl DeFindexStrategyTrait for ClAquarius {
-    /// init_args: [pool, oracle, registry, treasury, policy]
+    /// init_args: [pool, oracle, registry, treasury, policy, reward_token, reward_pool]
+    /// `reward_pool` must pair `reward_token` with one of the managed pool's
+    /// tokens (e.g. AQUA/XLM for an XLM/USDC managed pool).
     fn __constructor(e: Env, asset: Address, init_args: Vec<soroban_sdk::Val>) {
         let pool: Address = Address::try_from_val(&e, &init_args.get(0).unwrap()).unwrap();
         let oracle: Address = Address::try_from_val(&e, &init_args.get(1).unwrap()).unwrap();
         let registry: Address = Address::try_from_val(&e, &init_args.get(2).unwrap()).unwrap();
         let treasury: Address = Address::try_from_val(&e, &init_args.get(3).unwrap()).unwrap();
         let policy: Policy = Policy::try_from_val(&e, &init_args.get(4).unwrap()).unwrap();
+        let reward_token: Address = Address::try_from_val(&e, &init_args.get(5).unwrap()).unwrap();
+        let reward_pool: Address = Address::try_from_val(&e, &init_args.get(6).unwrap()).unwrap();
 
         // asset must be one of the pool's two tokens
         let tokens = ClPoolClient::new(&e, &pool).get_tokens();
@@ -89,12 +93,22 @@ impl DeFindexStrategyTrait for ClAquarius {
         if asset != t0 && asset != t1 {
             panic!("asset must be a pool token");
         }
+        // reward pool must convert reward_token into t0 or t1
+        let rt = ClPoolClient::new(&e, &reward_pool).get_tokens();
+        let (r0, r1) = (rt.get(0).unwrap(), rt.get(1).unwrap());
+        let pairs_reward = reward_token == r0 || reward_token == r1;
+        let yields_pool_tok = r0 == t0 || r0 == t1 || r1 == t0 || r1 == t1;
+        if !pairs_reward || !yields_pool_tok {
+            panic!("reward_pool must pair reward_token with a managed-pool token");
+        }
         set(&e, &DataKey::Asset, &asset);
         set(&e, &DataKey::Pool, &pool);
         set(&e, &DataKey::Oracle, &oracle);
         set(&e, &DataKey::Registry, &registry);
         set(&e, &DataKey::Treasury, &treasury);
         set(&e, &DataKey::Policy, &policy);
+        set(&e, &DataKey::RewardToken, &reward_token);
+        set(&e, &DataKey::RewardPool, &reward_pool);
         // opt in to pool rewards (live pools require set_rewards_state)
         ClPoolClient::new(&e, &pool).set_rewards_state(&e.current_contract_address(), &true);
     }
@@ -222,11 +236,8 @@ impl DeFindexStrategyTrait for ClAquarius {
         let oracle: Address = get(&e, &DataKey::Oracle);
         check_oracle_band(&e, &pool, &oracle, &t0, &t1, &policy)?;
 
-        // 1. Claim + convert rewards → pool tokens, fee cut from swap output.
-        if pool.get_user_reward(&me) > 0 {
-            let claimed = pool.claim(&me); // returns claimed AQUA amount
-            let _ = claimed;
-        }
+        // 1. Claim + convert rewards → pool token, fee cut from swap output.
+        claim_and_convert_rewards(&e, &pool_addr, &asset, &policy)?;
         // 2. LP fees claim + skim.
         claim_and_skim_lp_fees(&e, &pool_addr, &policy);
 
@@ -401,6 +412,48 @@ fn claim_and_skim_lp_fees(e: &Env, pool_addr: &Address, policy: &Policy) {
             }
         }
     }
+}
+
+/// Claim pool rewards (e.g. AQUA) and convert 100% into the managed-pool
+/// token it pairs against in `reward_pool`, cutting `perf_fee_bps` from the
+/// swap output. Skips conversion below `min_reward_swap` (claimed tokens
+/// stay as unvalued dust — still excluded from `balance()`, consistent with
+/// the reward exclusion rule).
+fn claim_and_convert_rewards(e: &Env, pool_addr: &Address, asset: &Address, policy: &Policy) -> Result<(), StrategyError> {
+    let pool = ClPoolClient::new(e, pool_addr);
+    let me = e.current_contract_address();
+    if pool.get_user_reward(&me) == 0 {
+        return Ok(());
+    }
+    let claimed = pool.claim(&me) as i128; // returns claimed amount
+    if claimed <= 0 {
+        return Ok(());
+    }
+    let reward_tok: Address = get(e, &DataKey::RewardToken);
+    let reward_pool_addr: Address = get(e, &DataKey::RewardPool);
+    let oracle: Address = get(e, &DataKey::Oracle);
+
+    // Dust gate: skip if claimed value < min_reward_swap (in asset units).
+    let p_rew = oracle_price(e, &oracle, &reward_tok, policy)?;
+    let p_asset = oracle_price(e, &oracle, asset, policy)?;
+    let value_asset = claimed * p_rew / p_asset;
+    if value_asset < policy.min_reward_swap {
+        return Ok(());
+    }
+
+    let rp = ClPoolClient::new(e, &reward_pool_addr);
+    let rt = rp.get_tokens();
+    let (in_idx, out_idx, out_tok) = if rt.get(0).unwrap() == reward_tok {
+        (0u32, 1u32, rt.get(1).unwrap())
+    } else {
+        (1u32, 0u32, rt.get(0).unwrap())
+    };
+    let p_out = oracle_price(e, &oracle, &out_tok, policy)?;
+    // oracle-derived min-out (equal token decimals assumed, see balance())
+    let fair_out = claimed * p_rew / p_out;
+    let out_min = fair_out * (BPS - policy.max_slippage_bps as i128) / BPS;
+    let got = rp.swap(&me, &in_idx, &out_idx, &(claimed as u128), &(out_min as u128)) as i128;
+    skim(e, &out_tok, got as u128, policy)
 }
 
 fn compute_balance_now(e: &Env, pool_addr: &Address, asset: &Address, policy: &Policy) -> Result<i128, StrategyError> {

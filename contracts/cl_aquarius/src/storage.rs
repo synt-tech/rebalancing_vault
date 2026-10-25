@@ -73,6 +73,10 @@ pub enum DataKey {
     Oracle,
     Registry,
     Treasury,
+    /// AQUA (or other reward token) and the CL pool used to convert it
+    /// into a managed-pool token. Formula-driven, not part of SwapPlan.
+    RewardToken,
+    RewardPool,
     Policy,
     Position,
     /// (Role, token) -> i128 accrued fees awaiting claim.

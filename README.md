@@ -57,6 +57,15 @@ on-chain, strategy off-chain, atomic rebalances.
 
 ## Design stance (carried over from prior work)
 
+The rocky-vault prototype (extracted at `synt_dex/rocky-rebalancer/`,
+`contracts/rocky-vault/`) is **deployed and exercised on testnet**
+(2026-10-02): vault `CBHV4KFGKKYJPS6CB65JCPERSWPTEO4AZJ5A7UYLAUJMTU2L2NELT4GA`
+managing an XLM/AQUA CL position — opened, then rebalanced through the 1%
+route pool to a 3055 bps token1 share. A first attempt through the 0.3%
+pool correctly reverted: its price was ~38% off the CL reference, so the
+required input exceeded the fair-price bound — the clamp caught a bad
+route live. Testnet keys exist in the stellar CLI: `admin`, `rocky-keeper`.
+
 - **Private contract-owned position**; `admin` (funds/policy) + `keeper`
   (submits `RebalancePlan`) — Gamma's `onlyOwner` + Revert's
   permissioned-executor hybrid.
@@ -93,7 +102,7 @@ on-chain, strategy off-chain, atomic rebalances.
 | `AI_sandbox/stellar/aquarius_dex/` | `aquarius_client.py`, `rebalance_solver.py`, `backtest_rebalance_policy.py`, pool PnL/cost analyzers, `pool_cache/`, live snapshots |
 | `AI_sandbox/stellar/aquarius_dex/research/` | CLMM economics literature: LVR σ²/8, width/trigger sweeps, vol-regime experiments (README maps findings → design) |
 | `AI_sandbox/security/Aquarius-security-review/` | Aquarius `soroban-amm` local working copy (upstream repo private — unmatched-to-deployed reference) |
-| `synt_tech_website.zip` | archive incl. `synt_dex/rocky-rebalancer/` — rocky-vault prototype + pinned reference sources (`reference/sources/`) |
+| `synt_dex/rocky-rebalancer/` | **rocky-vault prototype** — contract (`contracts/rocky-vault/`), tests, testnet deployment notes (README), pinned reference sources under `reference/` (extracted from `synt_tech_website.zip`; gitignored, regenerable) |
 | `AI_sandbox/rebalance_concentrated_positions_wrapper.py` | the manual rebalance flow the vault replaces |
 
 ## Open questions / TODO
@@ -102,14 +111,18 @@ on-chain, strategy off-chain, atomic rebalances.
       (rocky-vault shape) vs public share-token vault (needs
       donation/inflation guards + fee accounting).
 - [ ] Sushi adapter — how close to Uni-V3 semantics is the deployed pool?
-      (interface-verification task: skim `sushi-stellar-*` snapshots, diff
-      against Aquarius's documented behavior.)
+      rocky-vault's own notes flag NFT positions, oracle hints and a
+      different swap ABI as the deltas to resolve; skim `sushi-stellar-*`
+      snapshots under `synt_dex/rocky-rebalancer/reference/` and diff
+      against Aquarius's documented behavior.
 - [ ] Keeper trigger: subscribe `trade`/`pool_state` events, fire only at
       range exit — vs polling loop.
 - [ ] Multi-position (base + one-sided limit) to park leftover inventory
       without swapping — Gamma's reason for two positions.
-- [ ] Rewards: claim/re-stake AQUA rewards inside the vault, or leave to
-      admin sweep? (note the checkpoint-stale-weight behavior above)
+- [ ] Rewards: `claim_rewards` exists in rocky-vault but was never
+      exercised on testnet (needs pool gauge config) — claim/re-stake
+      inside the vault, or leave to admin sweep? (note the
+      checkpoint-stale-weight behavior above)
 - [ ] Demo story: live testnet vault vs recorded live-pool replay?
 
 ## Links

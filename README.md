@@ -77,13 +77,15 @@ vault do the pooled-custody work (local clone: `defindex/`):
   and compounding rewards, rebalancing a drifting position, rolling an
   expiring one" — their docs literally describe our rebalance). `data` is
   an opaque blob conventionally a min-out.
-- **Mapping for CL**: single-asset vault (e.g. sUSD) holding one
+- **Mapping for CL**: single-asset **USDC** vault holding one
   `cl_aquarius` strategy. The strategy internally owns the CL position:
-  deposit swaps/pairs sUSD→(AQUA,sUSD)→`deposit_position`; `balance()`
-  reports position value in sUSD at the pool's own `sqrt_price_x96`
+  deposit swaps/pairs USDC→(token0,USDC)→`deposit_position`; `balance()`
+  reports position value in USDC at the pool's own `sqrt_price_x96`
   (their rule: underlying-asset value at live rate, never shares);
   `harvest` = keeper entry for claim-fees/compound/re-range; `withdraw`
-  unwinds pro-rata + swaps back to sUSD.
+  unwinds pro-rata + swaps back to USDC.
+  (Vault asset decided USDC, 2026-10-25 — earlier drafts said sUSD;
+  `cl_vault_valuation.md` is the `balance()` design doc.)
 - **What we get free**: dfToken share minting + proportional multi-asset
   share math, fee locking/distribution (`vaultFee` on yield, `defindexFee`
   = their share *of* our fee), Manager/Emergency/Rebalance-manager roles,

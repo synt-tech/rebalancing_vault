@@ -20,7 +20,7 @@ The concentrated-liquidity (CL) pools now live on Stellar — Aquarius's
   the position, rebalance inventory back to the target ratio, re-mint at a
   new band around the new price. On Aquarius today this is a manual
   withdraw → swap → deposit bundle
-  (`AI_sandbox/rebalance_concentrated_positions_wrapper.py`).
+  (`rebalance_concentrated_positions_wrapper.py`).
 
 The measured cost of doing this badly, from our own account:
 
@@ -97,13 +97,13 @@ route live. Testnet keys exist in the stellar CLI: `admin`, `rocky-keeper`.
 
 | Path | What it is |
 |---|---|
-| `AI_sandbox/rebalancing_vaults_research.md` | code-level survey: Gamma, Arrakis, Revert, Beefy, Charm, Steer, DeFindex — and what rocky-vault took/rejected |
-| `AI_sandbox/cl_vault_landscape.md` | 7-type CL-vault taxonomy, trigger/swap-bound/position-shape/custody comparison tables, cautionary history |
-| `AI_sandbox/stellar/aquarius_dex/` | `aquarius_client.py`, `rebalance_solver.py`, `backtest_rebalance_policy.py`, pool PnL/cost analyzers, `pool_cache/`, live snapshots |
-| `AI_sandbox/stellar/aquarius_dex/research/` | CLMM economics literature: LVR σ²/8, width/trigger sweeps, vol-regime experiments (README maps findings → design) |
-| `AI_sandbox/security/Aquarius-security-review/` | Aquarius `soroban-amm` local working copy (upstream repo private — unmatched-to-deployed reference) |
+| `rebalancing_vaults_research.md` | code-level survey: Gamma, Arrakis, Revert, Beefy, Charm, Steer, DeFindex — and what rocky-vault took/rejected |
+| `cl_vault_landscape.md` | 7-type CL-vault taxonomy, trigger/swap-bound/position-shape/custody comparison tables, cautionary history |
+| `stellar/aquarius_dex/` | `aquarius_client.py`, `rebalance_solver.py`, `backtest_rebalance_policy.py`, pool PnL/cost analyzers, `pool_cache/`, live snapshots |
+| `stellar/aquarius_dex/research/` | CLMM economics literature: LVR σ²/8, width/trigger sweeps, vol-regime experiments (README maps findings → design) |
+| `security/Aquarius-security-review/` | Aquarius `soroban-amm` local working copy (upstream repo private — unmatched-to-deployed reference) |
 | `synt_dex/rocky-rebalancer/` | **rocky-vault prototype** — contract (`contracts/rocky-vault/`), tests, testnet deployment notes (README), pinned reference sources under `reference/` (extracted from `synt_tech_website.zip`; gitignored, regenerable) |
-| `AI_sandbox/rebalance_concentrated_positions_wrapper.py` | the manual rebalance flow the vault replaces |
+| `rebalance_concentrated_positions_wrapper.py` | the manual rebalance flow the vault replaces |
 
 ## Open questions / TODO
 

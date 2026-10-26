@@ -91,7 +91,7 @@ straight back — in either or both pool tokens, your pick.
 ## 11. Testnet proof
 shot: 07_deployments.png
 dur: 14
-caption: Live on testnet — try it: synt.tech/hackmeridian2026-automated-rebalancing-vault
+caption: Live on testnet — try it: synt.tech/rebalancing_vault
 voice: This is live on testnet today — six contracts, a working vault,
 and verified deposit, harvest and withdraw transactions — plus a fork
 test that replays the real mainnet pool and Reflector contracts. All

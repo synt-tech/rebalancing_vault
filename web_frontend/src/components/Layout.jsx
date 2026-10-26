@@ -35,6 +35,9 @@ export default function Layout({ children }) {
             <img src="/gears.svg" alt="synt" style={{ width: 28, height: 28 }} />
             <span className="text-glow" style={{ fontSize: 20 }}>Y.A.R.V</span>
           </Link>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#775588', fontSize: 12 }}>
+            by <img src="/synt_dex_100c.png" alt="synt_dex" style={{ height: 16 }} />
+          </span>
           <nav style={{ display: 'flex', gap: 14, marginLeft: 10 }}>
             <NavLink to="/" end style={({ isActive }) => ({ color: isActive ? '#C1A100' : '#a020f0', textDecoration: 'none', fontSize: 15 })}>Vaults</NavLink>
             <NavLink to="/portfolio" style={({ isActive }) => ({ color: isActive ? '#C1A100' : '#a020f0', textDecoration: 'none', fontSize: 15 })}>My Positions</NavLink>

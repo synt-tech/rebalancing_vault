@@ -3,7 +3,7 @@
 Deposit-and-forget liquidity vaults for Stellar's concentrated-liquidity
 pools. **HackMeridian 2026 submission — live on Stellar testnet.**
 
-- **Live app**: https://synt.tech/hackmeridian2026-automated-rebalancing-vault/
+- **Live app**: https://synt.tech/rebalancing_vault/
 - **Deployment record**: [`DEPLOYMENTS.md`](DEPLOYMENTS.md) — every contract
   address, WASM hash and verification tx hash
 - **Demo video / pitch deck**: `video/`, `pitch_deck.pptx`
@@ -54,7 +54,7 @@ liquidity usable for ordinary users on every chain where it shipped:
 
 ## Live on testnet
 
-**Try it live:** https://synt.tech/hackmeridian2026-automated-rebalancing-vault/
+**Try it live:** https://synt.tech/rebalancing_vault/
 — connect a testnet wallet (Freighter) to deposit, zap, and watch keeper
 rebalances.
 
@@ -232,7 +232,7 @@ Open engineering items:
 
 ## Links
 
-- Live app: https://synt.tech/hackmeridian2026-automated-rebalancing-vault/
+- Live app: https://synt.tech/rebalancing_vault/
 - Hackathon: https://www.hackmeridian.com/
 - Aquarius CL dev docs: https://docs.aqua.network/developers/concentrated-liquidity
 - Sushi on Stellar: https://www.sushi.com/stellar/pool

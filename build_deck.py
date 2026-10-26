@@ -193,7 +193,7 @@ CONTENT = {
             "Verified on-chain: create → deposit → harvest → withdraw;",
             "harvest really deployed a CL position, converted rewards",
             "and skimmed the fee — hashes in DEPLOYMENTS.md.",
-            "Try it: synt.tech/hackmeridian2026-automated-rebalancing-vault",
+            "Try it: synt.tech/rebalancing_vault",
             "Tested hard: 28 scenario tests + real-vault end-to-end,",
             "37 audit warnings → 0, fuzzing clean — plus a replay of",
             "the real mainnet pool and oracle from a chain snapshot.",

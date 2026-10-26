@@ -105,25 +105,69 @@ plan locks the gain in numéraire — that's what `40e41641…` did.
 
 Re-shot so the vault band sits *among* the fixture positions and the
 POSITION HOLDINGS row animates (the UI now derives the CL token mix from
-live slot0 + band ticks — the mock's stored deposits never change). To
-reset, the XLM leg first had to be sold at the high oracle mark so the
-price revert wouldn't trip the 200 bps loss budget:
+live slot0 + band ticks — the mock's stored deposits never change).
+Keeper = `GCAZ36…PW47HY` (the vault's RebalanceManager); every drift
+step is a mock `set_spot` paired with a matching `set_price` so spot
+stays inside the 500 bps oracle band.
 
-- harvest A @ tick 6100 / XLM 0.7362: swap step 13.5e9 XLM → 9.7e9 USDC,
-  redeploy **[4600,7600]** all-stable — `9a82ea12…`
-- revert: `set_spot`→tick 0 `28d0b8dc…` + `set_price`→0.40 `05b86936…`
-- harvest B: redeploy **[-1500,1500]** around tick 0 — `f8e640c1…`
-- drift ladder (spot + oracle each step):
-  +600 `9984fcb7…`/`f6b68aa6…` → +1550 `794b8df5…`/`72c00253…`
-  → +2300 `a5c0f075…`/`3e4bae98…` (all charted bands OOR)
-- harvest C: unwind → swap 7e9 USDC → 13.5e9 XLM → redeploy
-  **[800,3800]** in range — `4bfe5b1e…`
+Starting state: position `[3000,6000]` holding 13.5e9 XLM + 8e9 USDC
+(~16.5e9 USDC marked). Spot first drifted to 6100 / XLM 0.7362:
+[`a8ec4b28`](https://stellar.expert/explorer/testnet/tx/a8ec4b2887e073764149f9237f89c9a570fb3f38cfe6ab5fe8679057c2435f3d)
++
+[`5a284209`](https://stellar.expert/explorer/testnet/tx/5a284209ad134ce9084cda6eb068fe4085c04cf6cf06944c8e370181584e284d).
 
-Holdings arc on screen: 2,212 XLM/885 USDC (center) → 1,276/1,228
-(drifting) → 0/1,770 (OOR, fully USDC) → 1,738/875 post-rebalance.
-Shots: `video/shots/rebal_05_baseline_inrange_tick0.png`,
-`_06_tick600_drifting`, `_07_tick1550_oor`, `_08_tick2300_all_oor`,
-`_09_rebalanced_800_3800`.
+**Phase 0 — reset so the band rejoins the other LPs.** Reverting price
+while holding XLM would mark the position down ~18% → far over the
+200 bps/3600 s loss budget, so the XLM leg is sold first at the high
+oracle mark:
+
+1. Reseed stale oracle prices (600 s TTL) — USDC:
+   [`5216c1f5`](https://stellar.expert/explorer/testnet/tx/5216c1f5cafc48356f4e379783e74ee91d5c3898b3214012aae2f28cfcff3bc4),
+   XLM:
+   [`64b72693`](https://stellar.expert/explorer/testnet/tx/64b72693159b93f901aa156eaf68e70c48954b2fd1369c5538edde532f32491f)
+2. Keeper `harvest` — swap step 13.5e9 XLM → 9.7e9 USDC, redeploy
+   `[4600,7600]` all-stable:
+   [`9a82ea12`](https://stellar.expert/explorer/testnet/tx/9a82ea1238fb1b618f0fdba43ffeec87ca0ec8e90bea156f4785b8ccc914389f)
+3. Revert price to baseline — `set_spot` → tick 0:
+   [`28d0b8dc`](https://stellar.expert/explorer/testnet/tx/28d0b8dc52c892b4dab7570798469256258a75619af562f1d64005c212b5cb78),
+   `set_price` → 0.40:
+   [`05b86936`](https://stellar.expert/explorer/testnet/tx/05b869368b8ed2843c69d9f92222eddad3b5eb9c8915708919132f09d5218c82)
+4. Keeper `harvest` — redeploy `[-1500,1500]` around tick 0 (all-USDC,
+   ~0% NAV change → passes loss budget):
+   [`f8e640c1`](https://stellar.expert/explorer/testnet/tx/f8e640c17100f39b4f698f9618e0836c1bb194a6de77fbafd60271e0a3cfe008)
+
+**Phase 1 — baseline.** `rebal_05_baseline_inrange_tick0.png`: band
+`[-1500,1500]` interleaved with the fixture positions, IN RANGE,
+holdings 2,212 XLM / 885 USDC.
+
+**Phase 2 — gradual drift (each step = `set_spot` + `set_price`):**
+
+5. tick 600 / XLM 0.4247:
+   [`9984fcb7`](https://stellar.expert/explorer/testnet/tx/9984fcb710b32b234b8610382e8f3ac5d6ca8f4a4c2a37bfafa2480aa6830fae)
+   +
+   [`f6b68aa6`](https://stellar.expert/explorer/testnet/tx/f6b68aa660f74292a4fafe7f5ada9ace97e56c484e92fcb051566e8b0e6ca14e)
+   — still in range, holdings drift 1,276 / 1,228 →
+   `rebal_06_tick600_drifting.png`
+6. tick 1550 / XLM 0.4671:
+   [`794b8df5`](https://stellar.expert/explorer/testnet/tx/794b8df525094ec581e6f79c00b2a7798568fde802cd36ba6d6193c43acf179b)
+   +
+   [`72c00253`](https://stellar.expert/explorer/testnet/tx/72c00253fca3b9966f91df7b36791ee777e15bbee162d9b8388a91ea606889b1)
+   — past the +1500 edge → OUT OF RANGE, holdings 0 XLM / 1,770 USDC
+   (fully flipped) → `rebal_07_tick1550_oor.png`
+7. tick 2300 / XLM 0.5034:
+   [`a5c0f075`](https://stellar.expert/explorer/testnet/tx/a5c0f075a14c7cae6b0a7c0f50ffee8e0de8b8066ce5ae1c5c92b891e23c5e9a)
+   +
+   [`3e4bae98`](https://stellar.expert/explorer/testnet/tx/3e4bae9860ba5d4f1f159782042244feb3d9a98897254f455921f986680a8cf5)
+   — every charted band out of range → `rebal_08_tick2300_all_oor.png`
+
+**Phase 3 — keeper rebalance.** `harvest` with SwapPlan
+`ref_tick=2300, new_range=[800,3800]` plus a swap leg (7e9 USDC →
+13.5e9 XLM at oracle-validated `out_min`): unwind → swap → redeploy →
+`PPos` storage write `{tick_lower: 800, tick_upper: 3800}` —
+[`4bfe5b1e`](https://stellar.expert/explorer/testnet/tx/4bfe5b1eccdab6092068c2e1818c038de161809ee6c9fc5f3e2ff38007a1a1ed)
+→ `rebal_09_rebalanced_800_3800.png` (back IN RANGE, holdings
+1,738 XLM / 875 USDC). Explorer shots: `rebal_10_keeper_harvest_tx.png`,
+`rebal_11_keeper_tx_expanded.png`.
 
 ### Previous vault (v3 — SUPERSEDED, broken on shared mock)
 

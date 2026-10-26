@@ -1,0 +1,8 @@
+# Regenerable build outputs — sources (script.md, build.py, build_deck.py,
+# deck_template.pptx, real shots/) are tracked; outputs are not.
+video/audio/
+video/segs/
+video/shots/ph_*.png
+video/out.mp4
+pitch_deck.pptx
+pitch_deck.pdf

@@ -195,7 +195,7 @@ CONTENT = {
         strip="👉 Prior work disclosed: previously developed offchain rebalancing algorithm, and expanded it to a basic rebalancing vault proof-of-concept (testnet Oct 2) — the new layer is all this weekend.",
     ),
     "market": dict(
-        title="MARKET · MODEL · ROADMAP",
+        title="MARKET & ROADMAP",
         lead="The vault shape that won everywhere — missing on Stellar.",
         body=[
             "Kamino is the dominant LP product on Solana; Gamma is built",

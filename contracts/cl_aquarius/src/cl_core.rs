@@ -172,8 +172,9 @@ pub fn validate_plan(e: &Env, plan: &SwapPlan, p: &Policy, spacing: i32) -> Resu
             return Err(StrategyError::NotAuthorized);
         }
     }
-    if let Some((tl, tu)) = plan.new_range {
-        if tl >= tu || tl % spacing != 0 || tu % spacing != 0 {
+    let (tl, tu) = (plan.new_range.tick_lower, plan.new_range.tick_upper);
+    if tl < tu {
+        if tl % spacing != 0 || tu % spacing != 0 {
             return Err(StrategyError::InvalidArgument);
         }
         // Range half-width within policy bounds: (tu-tl)/2 in ticks

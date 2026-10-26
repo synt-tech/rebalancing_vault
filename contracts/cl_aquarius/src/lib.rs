@@ -19,9 +19,9 @@
 #![no_std]
 use soroban_sdk::{contract, contractimpl, token::TokenClient, xdr::FromXdr, Address, Bytes, Env, TryFromVal, Vec};
 
-mod cl_core;
-mod clients;
-mod storage;
+pub mod cl_core;
+pub mod clients;
+pub mod storage;
 
 use cl_core::*;
 use clients::*;
@@ -270,7 +270,8 @@ impl DeFindexStrategyTrait for ClAquarius {
         }
 
         // deploy into new range
-        if let Some((tl, tu)) = plan.new_range {
+        if plan.new_range.tick_lower < plan.new_range.tick_upper {
+            let (tl, tu) = (plan.new_range.tick_lower, plan.new_range.tick_upper);
             let b0 = spendable(&e, &t0).max(0);
             let b1 = spendable(&e, &t1).max(0);
             if b0 > 0 || b1 > 0 {
@@ -493,3 +494,6 @@ fn check_loss_budget(e: &Env, new_bal: i128, policy: &Policy, now: u64) -> Resul
     e.storage().instance().set(&DataKey::LossTracker, &(ws, u));
     Ok(())
 }
+
+#[cfg(test)]
+mod test;

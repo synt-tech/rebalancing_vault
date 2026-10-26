@@ -51,10 +51,18 @@ pub struct SwapStep {
 
 #[contracttype]
 #[derive(Clone, Debug)]
+pub struct RangeSpec {
+    pub tick_lower: i32,
+    pub tick_upper: i32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
 pub struct SwapPlan {
     pub steps: Vec<SwapStep>,
     pub expiry: u64,
-    pub new_range: Option<(i32, i32)>,
+    /// `tick_lower >= tick_upper` means "no redeploy".
+    pub new_range: RangeSpec,
 }
 
 #[contracttype]

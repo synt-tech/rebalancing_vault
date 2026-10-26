@@ -54,6 +54,10 @@ liquidity usable for ordinary users on every chain where it shipped:
 
 ## Live on testnet
 
+**Try it live:** https://synt.tech/hackmeridian2026-automated-rebalancing-vault/
+— connect a testnet wallet (Freighter) to deposit, zap, and watch keeper
+rebalances.
+
 Everything below is deployed and transaction-verified — full address and
 hash table in [`DEPLOYMENTS.md`](DEPLOYMENTS.md).
 
@@ -157,7 +161,13 @@ upstream:
   criticals on first pass; every externally-derived magnitude (oracle
   prices, pool estimates, keeper amounts) now uses checked ops —
   second pass: 0 critical on every production crate (`testing/`).
-- **Audit notes**: `audit/`.
+- **Deep internal audit** (`audit/DEEP_AUDIT_2026-10-26.md`): a second,
+  adversarial pass over the platform layer flagged **1 critical + 7 high**
+  findings — optional oracle routes can bypass registry provenance,
+  `set_policy` skips intrinsic validation, and recovery paths are
+  incomplete. Verdict in the doc: not yet ready for third-party
+  operators or mainnet — remediation is the top roadmap item, and the
+  audit is published here deliberately.
 
 ## Prior work & what's new
 

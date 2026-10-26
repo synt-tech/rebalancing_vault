@@ -1,5 +1,10 @@
 # Contract audit — CL rebalancing platform
 
+## Reports
+
+- **[Deep audit — 2026-10-26](DEEP_AUDIT_2026-10-26.md)** — current working tree; full findings, test evidence, and remediation plan.
+- Initial contract review below (commit `1e15c13`).
+
 Status: **internal engineering review**, not a third-party security audit or
 formal verification. It covers the contracts and tests in this workspace and
 records the findings that were fixed in commit `1e15c13`

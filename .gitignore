@@ -14,3 +14,8 @@ target/
 __pycache__/
 .env
 .env.*
+
+# Fork-test snapshot artifacts (regenerable, ~85MB) — see testing/fork/README.md
+testing/fork/*.json
+# Env drop-snapshot of the fork test — dumps the entire ~64k-entry ledger (~98MB)
+contracts/cl_aquarius/test_snapshots/test_fork/

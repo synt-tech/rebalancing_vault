@@ -62,11 +62,12 @@ straight back — in either or both pool tokens, your pick.
 
 ## 7. Testnet proof
 shot: 07_deployments.png
-dur: 13
+dur: 14
 caption: Live on testnet: contracts, a vault, verified transactions
 voice: This is live on testnet today — six contracts, a working vault,
-and verified deposit, invest and withdraw transactions, all built this
-weekend on an audited foundation.
+and verified deposit, harvest and withdraw transactions — plus a fork
+test that replays the real mainnet pool and Reflector contracts. All
+built this weekend on an audited foundation.
 
 ## 8. Hackathon progress
 shot: 08_progress.png

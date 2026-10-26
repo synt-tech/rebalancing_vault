@@ -101,6 +101,30 @@ XLM-heavy position counts as gain (always passes), a drop would count as
 loss (max 200 bps/3600 s). Selling the appreciated leg inside the same
 plan locks the gain in numéraire — that's what `40e41641…` did.
 
+### Final photographed arc — position among peers, animated holdings
+
+Re-shot so the vault band sits *among* the fixture positions and the
+POSITION HOLDINGS row animates (the UI now derives the CL token mix from
+live slot0 + band ticks — the mock's stored deposits never change). To
+reset, the XLM leg first had to be sold at the high oracle mark so the
+price revert wouldn't trip the 200 bps loss budget:
+
+- harvest A @ tick 6100 / XLM 0.7362: swap step 13.5e9 XLM → 9.7e9 USDC,
+  redeploy **[4600,7600]** all-stable — `9a82ea12…`
+- revert: `set_spot`→tick 0 `28d0b8dc…` + `set_price`→0.40 `05b86936…`
+- harvest B: redeploy **[-1500,1500]** around tick 0 — `f8e640c1…`
+- drift ladder (spot + oracle each step):
+  +600 `9984fcb7…`/`f6b68aa6…` → +1550 `794b8df5…`/`72c00253…`
+  → +2300 `a5c0f075…`/`3e4bae98…` (all charted bands OOR)
+- harvest C: unwind → swap 7e9 USDC → 13.5e9 XLM → redeploy
+  **[800,3800]** in range — `4bfe5b1e…`
+
+Holdings arc on screen: 2,212 XLM/885 USDC (center) → 1,276/1,228
+(drifting) → 0/1,770 (OOR, fully USDC) → 1,738/875 post-rebalance.
+Shots: `video/shots/rebal_05_baseline_inrange_tick0.png`,
+`_06_tick600_drifting`, `_07_tick1550_oor`, `_08_tick2300_all_oor`,
+`_09_rebalanced_800_3800`.
+
 ### Previous vault (v3 — SUPERSEDED, broken on shared mock)
 
 | Role | Address |

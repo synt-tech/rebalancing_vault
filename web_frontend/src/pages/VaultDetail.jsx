@@ -141,6 +141,30 @@ export default function VaultDetail() {
     tickMap[p.tick_upper] = (tickMap[p.tick_upper] ?? 0) - Number(p.liquidity)
   })
 
+  // The mock pool stores deposit amounts statically; a real CL position's
+  // token mix drifts with price (all token0 below the band, all token1
+  // above it). Derive the implied split for display: V3 amounts per unit
+  // liquidity at the live spot, rescaled so implied spot value ties to the
+  // contract's stored deposits.
+  const impliedHoldings = (() => {
+    const pp = d.posDetail?.pp
+    if (tl === null || tu === null || d.cur == null || !pp) return null
+    const a0s = Number(pp[1])
+    const a1s = Number(pp[2])
+    const sqrt96 = Number(d.slot?.sqrt_price_x96 ?? 0)
+    if (!(sqrt96 > 0)) return { xlm: a0s, usdc: a1s }
+    const sP = sqrt96 / (2 ** 96)
+    const sa = sP / Math.pow(1.0001, (d.cur - tl) / 2)
+    const sb = sP * Math.pow(1.0001, (tu - d.cur) / 2)
+    const P = sP * sP
+    const [u0, u1] = sP <= sa ? [1 / sa - 1 / sb, 0]
+      : sP >= sb ? [0, sb - sa]
+      : [1 / sP - 1 / sb, sP - sa]
+    const impliedVal = u0 * P + u1
+    const k = impliedVal > 0 ? (a0s * P + a1s) / impliedVal : 0
+    return { xlm: u0 * k, usdc: u1 * k }
+  })()
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
@@ -189,8 +213,8 @@ export default function VaultDetail() {
       {tl !== null && d.posDetail?.pp && (
         <div className="synt_tech_card" style={{ margin: '10px 0', padding: '10px 14px', fontSize: 13, display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           <span style={{ color: '#9977aa' }}>POSITION HOLDINGS</span>
-          <span>XLM: <b>{fmt(d.posDetail.pp[1])}</b></span>
-          <span>USDC: <b>{fmt(d.posDetail.pp[2])}</b></span>
+          <span>XLM: <b>{fmt(impliedHoldings?.xlm ?? d.posDetail.pp[1])}</b></span>
+          <span>USDC: <b>{fmt(impliedHoldings?.usdc ?? d.posDetail.pp[2])}</b></span>
           {d.posDetail.fees && <span>uncollected fees: <b>{fmt(d.posDetail.fees[0])} XLM</b> + <b>{fmt(d.posDetail.fees[1])} USDC</b></span>}
           <span style={{ color: '#775588' }}>liquidity {fmt(d.posDetail.pp[0])}</span>
         </div>

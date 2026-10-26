@@ -6,3 +6,11 @@ video/shots/ph_*.png
 video/out.mp4
 pitch_deck.pptx
 pitch_deck.pdf
+
+# Toolchains / build artifacts
+node_modules/
+dist/
+target/
+__pycache__/
+.env
+.env.*

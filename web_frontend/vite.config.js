@@ -29,7 +29,7 @@ function cspOnBuild() {
 }
 
 export default defineConfig({
-  base: '/',
+  base: './',
   plugins: [react(), cspOnBuild()],
   server: { port: 5174 },
   build: { outDir: 'dist' },

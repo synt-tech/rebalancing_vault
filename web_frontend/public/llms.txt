@@ -1,0 +1,41 @@
+# Y.A.R.V. — Automated Rebalancing Vaults (HackMeridian 2026)
+
+> Deposit-and-forget liquidity vaults for Stellar's concentrated-liquidity
+> pools. A HackMeridian 2026 submission (Genesis track, Stellar Composed
+> theme).
+
+## What it is
+
+Concentrated-liquidity (CL) pools on Stellar (Aquarius CL pools, Sushi V3)
+pay fees only while price stays inside a tick band — positions must be
+actively re-ranged or they earn zero and hold 100% of the losing token.
+Y.A.R.V. vaults restore the deposit-and-forget LP pattern: deposit in one
+transaction, receive a fungible share token, and a strategy contract
+re-ranges the position inside strict on-chain policy limits (oracle-
+referenced slippage bounds, loss caps, cooldowns, venue allowlists).
+
+## Architecture
+
+- `cl_aquarius` — the first concentrated-liquidity strategy implementing
+  `DeFindexStrategyTrait`: oracle-valued `balance()` in USDC, keeper
+  `harvest` for claim-fees / convert-rewards / re-range via validated
+  swap plans, pro-rata `withdraw`, `emergency_exit`.
+- `strategy_registry` + `platform` — template-hash governance, curated
+  venues, vaults created non-upgradable with `vault_fee = 0`; the only
+  fee is a capped strategy-side cut of collected income.
+- DeFindex vault + factory — OtterSec-audited custody/share layer, run
+  under our own factory instance with a two-item correctness patch
+  (carried-loss overwrite, delivered-vs-requested withdrawal check).
+- Reflector oracle — every price decision references the oracle, never
+  the pool's own spot.
+
+## Live
+
+Contracts are deployed and exercised on Stellar testnet — see
+`DEPLOYMENTS.md` in the repository for the full address table and
+verification transactions. This site is the vault UI: connect a testnet
+wallet (Freighter) to deposit/withdraw and watch keeper rebalances.
+
+## Source
+
+https://github.com/synt-tech/hackmeridian2026-automated-rebalancing-vault

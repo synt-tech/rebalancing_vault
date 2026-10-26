@@ -179,7 +179,7 @@ CONTENT = {
             "Atomic unwind → swap → re-mint in ONE transaction; loss-",
             "budget window, stale-oracle gates, emergency_exit.",
         ],
-        strip="👉 14-field on-chain Policy — the strictest in its class (Charm: 5 params, Gamma: trust-the-owner).",
+        strip="👉 The contract enforces 14 hard limits on every keeper action — rival vaults have far fewer (Charm: 5, Gamma: none — it trusts the owner).",
     ),
     "proof": dict(
         title="PROGRESS & PROOF",

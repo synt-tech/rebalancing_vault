@@ -277,6 +277,31 @@ def main():
                      scale=0.75 if len(c["body"]) > 6 else 0.85)
         if "strip" in r:
             set_text(r["strip"], c["strip"], scale=0.8)
+        if key == "problem":
+            r["body"].width = IN(9.0)
+            shot = ROOT / "assets/screenshots/aquarius_oor_card.png"
+            if shot.exists():
+                w = 8.6
+                slide.shapes.add_picture(str(shot), IN(10.3), IN(3.95),
+                                         width=IN(w), height=IN(w / 2.826))
+                cap = slide.shapes.add_textbox(IN(10.3), IN(7.05),
+                                               IN(8.6), IN(0.6))
+                f = font_of(r["body"])
+                cap.text_frame.word_wrap = True
+                for i, line in enumerate([
+                        "Real Aquarius testnet position — 20 XLM, range",
+                        "4.48–4.95, price at 5.57 → fees $0. Manually",
+                        "babysitting CL positions is a pain in the ass."]):
+                    p = cap.text_frame.paragraphs[0] if i == 0 \
+                        else cap.text_frame.add_paragraph()
+                    run = p.add_run()
+                    run.text = line
+                    if f["name"]:
+                        run.font.name = f["name"]
+                    run.font.size = Pt(13)
+                    run.font.italic = True
+                    if f["color"]:
+                        run.font.color.rgb = f["color"]
 
     prs.save(OUT)
     print(f"{OUT}  {OUT.stat().st_size / 1e6:.2f} MB, {len(prs.slides.__iter__.__self__._sldIdLst)} slides")

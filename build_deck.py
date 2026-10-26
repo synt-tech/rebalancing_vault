@@ -197,17 +197,18 @@ CONTENT = {
     "market": dict(
         title="MARKET & ROADMAP",
         lead="The vault shape that won everywhere — missing on Stellar.",
+        body_scale=0.62,
         body=[
-            "Kamino is the dominant LP product on Solana; Gamma is built",
-            "into QuickSwap/Camelot. Stellar has the CL pools (Aquarius,",
-            "Sushi V3) but no share-vault yet — the slot is open, the",
-            "demand proven on other chains.",
-            "Model: a policy-capped share of the income the position",
-            "collects (fees + rewards), split platform/operator — the",
-            "DeFindex vault fee itself stays at 0.",
-            "Next: extensive contract testing → Sushi adapter → 5 strategy",
-            "template families → live mainnet testing & optimisation on",
-            "real markets → permissionless keeper bounties → SCF.",
+            "Kamino dominates Solana LP; Gamma ships inside",
+            "QuickSwap/Camelot — on Stellar, CL pools exist but",
+            "no share-vault yet: open slot, demand proven.",
+            "Model: a capped cut of the income the position",
+            "collects, split platform/operator; the vault fee",
+            "itself stays at 0.",
+            "Next: extensive contract testing → Sushi adapter →",
+            "5 strategy template families → live mainnet",
+            "strategy testing and optimisation on real markets",
+            "→ permissionless keeper bounties → SCF.",
         ],
         strip="👉 First-mover CL vault platform on Stellar — the strategy layer DeFindex itself hasn't built.",
     ),
@@ -279,7 +280,8 @@ def main():
             set_text(r["lead"], c["lead"], scale=0.85)
         if "body" in r:
             set_text(r["body"], c["body"],
-                     scale=0.75 if len(c["body"]) > 6 else 0.85)
+                     scale=c.get("body_scale",
+                                 0.75 if len(c["body"]) > 6 else 0.85))
         if "strip" in r:
             set_text(r["strip"], c["strip"], scale=0.8)
         if key == "problem":

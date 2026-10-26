@@ -1,0 +1,12 @@
+[package]
+name = "defindex-strategy-core"
+description = "Vendored copy of DeFindex strategy-core (upstream: defindex/apps/contracts/strategies/core) so our crates can compile against a newer soroban-sdk than the defindex workspace pins."
+version = "0.2.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

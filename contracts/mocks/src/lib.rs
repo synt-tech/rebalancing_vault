@@ -53,7 +53,9 @@ impl MockPool {
         e.storage().instance().set(&Key::Token(0), &token0);
         e.storage().instance().set(&Key::Token(1), &token1);
         // sqrt_x96 = sqrt(price1/0)*2^96 — pass numerator scaled: store raw
-        e.storage().instance().set(&Key::SqrtX96, &U256::from_u128(&e, sqrt_x96_num));
+        e.storage()
+            .instance()
+            .set(&Key::SqrtX96, &U256::from_u128(&e, sqrt_x96_num));
         e.storage().instance().set(&Key::Tick, &0i32);
     }
 
@@ -73,7 +75,9 @@ impl MockPool {
     }
 
     pub fn set_spot(e: Env, sqrt_x96_num: u128, tick: i32) {
-        e.storage().instance().set(&Key::SqrtX96, &U256::from_u128(&e, sqrt_x96_num));
+        e.storage()
+            .instance()
+            .set(&Key::SqrtX96, &U256::from_u128(&e, sqrt_x96_num));
         e.storage().instance().set(&Key::Tick, &tick);
     }
 
@@ -97,7 +101,9 @@ impl MockPool {
     }
 
     fn put_pos(e: &Env, owner: &Address, tl: i32, tu: i32, v: (u128, u128, u128)) {
-        e.storage().persistent().set(&Key::Pos(owner.clone(), tl, tu), &v);
+        e.storage()
+            .persistent()
+            .set(&Key::Pos(owner.clone(), tl, tu), &v);
     }
 
     /// (liq, a0, a1) packed into a Vec for a 3-field PositionData-ish return.
@@ -108,7 +114,13 @@ impl MockPool {
 
     /// Liquidity is treated 1:1 with "shares"; withdraw pays pro-rata of the
     /// stored deposit amounts (a0,a1 recorded at deposit time).
-    pub fn estimate_withdraw_position(e: Env, owner: Address, tl: i32, tu: i32, amount: u128) -> Vec<u128> {
+    pub fn estimate_withdraw_position(
+        e: Env,
+        owner: Address,
+        tl: i32,
+        tu: i32,
+        amount: u128,
+    ) -> Vec<u128> {
         let (liq, a0, a1) = Self::pos(&e, &owner, tl, tu);
         if liq == 0 {
             return Vec::from_array(&e, [0u128, 0u128]);
@@ -116,14 +128,24 @@ impl MockPool {
         Vec::from_array(&e, [a0 * amount / liq, a1 * amount / liq])
     }
 
-    pub fn withdraw_position(e: Env, owner: Address, tl: i32, tu: i32, amount: u128, min_amounts: Vec<u128>) -> Vec<u128> {
+    pub fn withdraw_position(
+        e: Env,
+        owner: Address,
+        tl: i32,
+        tu: i32,
+        amount: u128,
+        min_amounts: Vec<u128>,
+    ) -> Vec<u128> {
         owner.require_auth();
         let (liq, a0, a1) = Self::pos(&e, &owner, tl, tu);
         if liq == 0 || amount == 0 {
             return Vec::from_array(&e, [0u128, 0u128]);
         }
         let (p0, p1) = (a0 * amount / liq, a1 * amount / liq);
-        assert!(p0 >= min_amounts.get(0).unwrap_or(0) && p1 >= min_amounts.get(1).unwrap_or(0), "min_amounts");
+        assert!(
+            p0 >= min_amounts.get(0).unwrap_or(0) && p1 >= min_amounts.get(1).unwrap_or(0),
+            "min_amounts"
+        );
         let me = e.current_contract_address();
         if p0 > 0 {
             TokenClient::new(&e, &Self::t(&e, 0)).transfer(&me, &owner, &(p0 as i128));
@@ -135,7 +157,14 @@ impl MockPool {
         Vec::from_array(&e, [p0, p1])
     }
 
-    pub fn deposit_position(e: Env, sender: Address, tl: i32, tu: i32, desired: Vec<u128>, _min_liq: u128) -> (Vec<u128>, u128) {
+    pub fn deposit_position(
+        e: Env,
+        sender: Address,
+        tl: i32,
+        tu: i32,
+        desired: Vec<u128>,
+        _min_liq: u128,
+    ) -> (Vec<u128>, u128) {
         sender.require_auth();
         let (d0, d1) = (desired.get(0).unwrap_or(0), desired.get(1).unwrap_or(0));
         let me = e.current_contract_address();
@@ -153,24 +182,43 @@ impl MockPool {
 
     /// Test hook: set claimable position fees.
     pub fn set_position_fees(e: Env, tl: i32, tu: i32, f0: u128, f1: u128) {
-        e.storage().persistent().set(&Key::PosFees(tl, tu), &Vec::from_array(&e, [f0, f1]));
+        e.storage()
+            .persistent()
+            .set(&Key::PosFees(tl, tu), &Vec::from_array(&e, [f0, f1]));
     }
 
     pub fn get_position_fees(e: Env, _owner: Address, tl: i32, tu: i32) -> Vec<u128> {
-        e.storage().persistent().get(&Key::PosFees(tl, tu)).unwrap_or(Vec::from_array(&e, [0u128, 0u128]))
+        e.storage()
+            .persistent()
+            .get(&Key::PosFees(tl, tu))
+            .unwrap_or(Vec::from_array(&e, [0u128, 0u128]))
     }
 
     pub fn claim_position_fees(e: Env, owner: Address, tl: i32, tu: i32) -> Vec<u128> {
         owner.require_auth();
-        let got: Vec<u128> = e.storage().persistent().get(&Key::PosFees(tl, tu)).unwrap_or(Vec::from_array(&e, [0u128, 0u128]));
+        let got: Vec<u128> = e
+            .storage()
+            .persistent()
+            .get(&Key::PosFees(tl, tu))
+            .unwrap_or(Vec::from_array(&e, [0u128, 0u128]));
         let me = e.current_contract_address();
         if got.get(0).unwrap_or(0) > 0 {
-            TokenClient::new(&e, &Self::t(&e, 0)).transfer(&me, &owner, &(got.get(0).unwrap() as i128));
+            TokenClient::new(&e, &Self::t(&e, 0)).transfer(
+                &me,
+                &owner,
+                &(got.get(0).unwrap() as i128),
+            );
         }
         if got.get(1).unwrap_or(0) > 0 {
-            TokenClient::new(&e, &Self::t(&e, 1)).transfer(&me, &owner, &(got.get(1).unwrap() as i128));
+            TokenClient::new(&e, &Self::t(&e, 1)).transfer(
+                &me,
+                &owner,
+                &(got.get(1).unwrap() as i128),
+            );
         }
-        e.storage().persistent().set(&Key::PosFees(tl, tu), &Vec::from_array(&e, [0u128, 0u128]));
+        e.storage()
+            .persistent()
+            .set(&Key::PosFees(tl, tu), &Vec::from_array(&e, [0u128, 0u128]));
         got
     }
 
@@ -185,7 +233,14 @@ impl MockPool {
 
     /// 1:1 swap — pays exactly `out_min` if pool can cover it (tests choose
     /// out_min ≤ expected). Pulls in_amount.
-    pub fn swap(e: Env, user: Address, in_idx: u32, out_idx: u32, in_amount: u128, out_min: u128) -> u128 {
+    pub fn swap(
+        e: Env,
+        user: Address,
+        in_idx: u32,
+        out_idx: u32,
+        in_amount: u128,
+        out_min: u128,
+    ) -> u128 {
         user.require_auth();
         let me = e.current_contract_address();
         TokenClient::new(&e, &Self::t(&e, in_idx)).transfer(&user, &me, &(in_amount as i128));
@@ -193,7 +248,14 @@ impl MockPool {
         out_min
     }
 
-    pub fn swap_strict_receive(e: Env, user: Address, in_idx: u32, out_idx: u32, out_amount: u128, in_max: u128) -> u128 {
+    pub fn swap_strict_receive(
+        e: Env,
+        user: Address,
+        in_idx: u32,
+        out_idx: u32,
+        out_amount: u128,
+        in_max: u128,
+    ) -> u128 {
         user.require_auth();
         let me = e.current_contract_address();
         TokenClient::new(&e, &Self::t(&e, in_idx)).transfer(&user, &me, &(in_max as i128));
@@ -209,11 +271,18 @@ impl MockPool {
         e.storage().persistent().set(&Key::UserReward(user), &amt);
     }
     pub fn get_user_reward(e: Env, user: Address) -> u128 {
-        e.storage().persistent().get(&Key::UserReward(user)).unwrap_or(0)
+        e.storage()
+            .persistent()
+            .get(&Key::UserReward(user))
+            .unwrap_or(0)
     }
     pub fn claim(e: Env, user: Address) -> u128 {
         user.require_auth();
-        let amt: u128 = e.storage().persistent().get(&Key::UserReward(user.clone())).unwrap_or(0);
+        let amt: u128 = e
+            .storage()
+            .persistent()
+            .get(&Key::UserReward(user.clone()))
+            .unwrap_or(0);
         e.storage().persistent().set(&Key::UserReward(user), &0u128);
         amt
     }
@@ -231,10 +300,14 @@ pub struct MockOracle;
 #[contractimpl]
 impl MockOracle {
     pub fn set_price(e: Env, asset: Address, price: i128) {
-        e.storage().persistent().set(&Key::Price(asset), &(price, e.ledger().timestamp()));
+        e.storage()
+            .persistent()
+            .set(&Key::Price(asset), &(price, e.ledger().timestamp()));
     }
     pub fn set_price_ts(e: Env, asset: Address, price: i128, ts: u64) {
-        e.storage().persistent().set(&Key::Price(asset), &(price, ts));
+        e.storage()
+            .persistent()
+            .set(&Key::Price(asset), &(price, ts));
     }
     /// SEP-40 lastprice — enum arg must match OracleAsset's XDR shape.
     pub fn lastprice(e: Env, asset: OracleAsset) -> Option<PriceData> {
@@ -243,7 +316,10 @@ impl MockOracle {
             OracleAsset::Other(_) => return None,
         };
         let (p, ts): (i128, u64) = e.storage().persistent().get(&Key::Price(a))?;
-        Some(PriceData { price: p, timestamp: ts })
+        Some(PriceData {
+            price: p,
+            timestamp: ts,
+        })
     }
     pub fn decimals(_e: Env) -> u32 {
         14
@@ -257,7 +333,13 @@ pub struct MockVault;
 
 #[contractimpl]
 impl MockVault {
-    pub fn init(e: Env, manager: Address, rebalance: Address, emergency: Address, fee_recv: Address) {
+    pub fn init(
+        e: Env,
+        manager: Address,
+        rebalance: Address,
+        emergency: Address,
+        fee_recv: Address,
+    ) {
         e.storage().instance().set(&Key::Role(0), &emergency);
         e.storage().instance().set(&Key::Role(1), &fee_recv);
         e.storage().instance().set(&Key::Role(2), &manager);
@@ -267,7 +349,10 @@ impl MockVault {
         e.storage().instance().set(&Key::Treasury, &treasury);
     }
     pub fn treasury(e: Env) -> Address {
-        e.storage().instance().get(&Key::Treasury).unwrap_or(e.current_contract_address())
+        e.storage()
+            .instance()
+            .get(&Key::Treasury)
+            .unwrap_or(e.current_contract_address())
     }
     pub fn get_emergency_manager(e: Env) -> Address {
         e.storage().instance().get(&Key::Role(0)).unwrap()

@@ -8,8 +8,8 @@
 #![no_std]
 use soroban_sdk::{
     auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
-    contract, contracterror, contractimpl, contracttype, vec, Address, BytesN, Env,
-    IntoVal, Map, String, Symbol, Val, Vec,
+    contract, contracterror, contractimpl, contracttype, vec, Address, BytesN, Env, IntoVal, Map,
+    String, Symbol, Val, Vec,
 };
 
 #[contracterror]
@@ -81,7 +81,9 @@ impl Platform {
         e.storage().instance().set(&DataKey::Admin, &admin);
         e.storage().instance().set(&DataKey::Factory, &factory);
         e.storage().instance().set(&DataKey::Registry, &registry);
-        e.storage().instance().set(&DataKey::NullRouter, &null_router);
+        e.storage()
+            .instance()
+            .set(&DataKey::NullRouter, &null_router);
         e.storage().instance().set(&DataKey::Treasury, &treasury);
     }
 
@@ -111,11 +113,8 @@ impl Platform {
         deploy_args.push_back(salt.into_val(&e));
         deploy_args.push_back(asset.clone().into_val(&e));
         deploy_args.push_back(init_args.into_val(&e));
-        let strategy: Address = e.invoke_contract(
-            &registry,
-            &Symbol::new(&e, "deploy_strategy"),
-            deploy_args,
-        );
+        let strategy: Address =
+            e.invoke_contract(&registry, &Symbol::new(&e, "deploy_strategy"), deploy_args);
 
         // 2. Create vault via our stock-factory instance. Platform keeps
         //    EmergencyManager; vault_fee pinned 0; null_router kills the
@@ -138,7 +137,10 @@ impl Platform {
         let mut strats: Vec<Strategy> = Vec::new(&e);
         strats.push_back(strategy_entry);
         let mut assets: Vec<AssetStrategySet> = Vec::new(&e);
-        assets.push_back(AssetStrategySet { address: asset, strategies: strats });
+        assets.push_back(AssetStrategySet {
+            address: asset,
+            strategies: strats,
+        });
 
         let mut factory_args: Vec<Val> = Vec::new(&e);
         factory_args.push_back(roles.into_val(&e));

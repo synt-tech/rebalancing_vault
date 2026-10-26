@@ -1,10 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["cl_aquarius", "null_router", "strategy_registry", "platform", "mocks"]
+members = ["cl_aquarius", "null_router", "strategy_registry", "platform", "mocks", "strategy_core"]
 
 [workspace.dependencies]
-soroban-sdk = "22.0.3"
-defindex-strategy-core = { path = "../../defindex/apps/contracts/strategies/core", package = "defindex-strategy-core" }
+soroban-sdk = "29.0.1"
+defindex-strategy-core = { path = "strategy_core" }
 
 [profile.release]
 opt-level = "z"

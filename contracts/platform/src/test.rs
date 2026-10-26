@@ -133,9 +133,15 @@ fn create_vault_deploys_binds_and_runs_deposit() {
     let keeper = Address::generate(&e);
 
     // Tokens + mocks (pool-shaped __constructor args satisfy every instance).
-    let xlm = e.register_stellar_asset_contract_v2(admin.clone()).address();
-    let usdc = e.register_stellar_asset_contract_v2(admin.clone()).address();
-    let aqua = e.register_stellar_asset_contract_v2(admin.clone()).address();
+    let xlm = e
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+    let usdc = e
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+    let aqua = e
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     let sqrtp: u128 = 125_260_000_000_000_000_000_000_000_000; // √2.5·2^96
     let pool = e.register(MOCK_WASM, (xlm.clone(), usdc.clone(), sqrtp));
     let oracle = e.register(MOCK_WASM, (xlm.clone(), usdc.clone(), 1u128));
@@ -145,14 +151,25 @@ fn create_vault_deploys_binds_and_runs_deposit() {
         (xlm.clone(), 40_000_000_000_000i128),
         (aqua.clone(), 20_000_000_000_000i128),
     ] {
-        invoke(&e, &oracle, "set_price", vec![&e, tok.into_val(&e), p.into_val(&e)]);
+        invoke(
+            &e,
+            &oracle,
+            "set_price",
+            vec![&e, tok.into_val(&e), p.into_val(&e)],
+        );
     }
 
     // Platform stack: factory → registry → platform → wiring.
     let vault_hash = e.deployer().upload_contract_wasm(VAULT_WASM);
     let template_hash = e.deployer().upload_contract_wasm(STRATEGY_WASM);
-    let factory = e.register(FACTORY_WASM, (admin.clone(), receiver.clone(), 0u32, vault_hash));
-    let registry = e.register(REGISTRY_WASM, (admin.clone(), treasury.clone(), admin.clone()));
+    let factory = e.register(
+        FACTORY_WASM,
+        (admin.clone(), receiver.clone(), 0u32, vault_hash),
+    );
+    let registry = e.register(
+        REGISTRY_WASM,
+        (admin.clone(), treasury.clone(), admin.clone()),
+    );
     let null_router = e.register(NULL_ROUTER_WASM, ());
     let platform_addr = e.register(
         Platform,
@@ -261,15 +278,24 @@ fn deploy_rejects_unlisted_pool() {
 
     let admin = Address::generate(&e);
     let treasury = Address::generate(&e);
-    let xlm = e.register_stellar_asset_contract_v2(admin.clone()).address();
-    let usdc = e.register_stellar_asset_contract_v2(admin.clone()).address();
-    let aqua = e.register_stellar_asset_contract_v2(admin.clone()).address();
+    let xlm = e
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+    let usdc = e
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
+    let aqua = e
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     let pool = e.register(MOCK_WASM, (xlm.clone(), usdc.clone(), 1u128));
     let oracle = e.register(MOCK_WASM, (xlm.clone(), usdc.clone(), 1u128));
     let reward_pool = e.register(MOCK_WASM, (xlm.clone(), aqua.clone(), 1u128));
 
     let template_hash = e.deployer().upload_contract_wasm(STRATEGY_WASM);
-    let registry = e.register(REGISTRY_WASM, (admin.clone(), treasury.clone(), admin.clone()));
+    let registry = e.register(
+        REGISTRY_WASM,
+        (admin.clone(), treasury.clone(), admin.clone()),
+    );
     let registry_c = RegistryTestClient::new(&e, &registry);
     registry_c.register_template(&template_hash, &Symbol::new(&e, "cl_aquarius"));
     // Deliberately do NOT add_venue(pool).

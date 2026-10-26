@@ -93,14 +93,18 @@ impl StrategyRegistry {
         e.storage().instance().set(&DataKey::Admin, &admin);
         e.storage().instance().set(&DataKey::Treasury, &treasury);
         e.storage().instance().set(&DataKey::Platform, &platform);
-        e.storage().instance().set(&DataKey::Venues, &Vec::<Address>::new(&e));
+        e.storage()
+            .instance()
+            .set(&DataKey::Venues, &Vec::<Address>::new(&e));
     }
 
     // ---- admin ----
 
     pub fn register_template(e: Env, template_hash: BytesN<32>, family: Symbol) {
         require_admin(&e);
-        e.storage().instance().set(&DataKey::Template(template_hash.clone()), &family);
+        e.storage()
+            .instance()
+            .set(&DataKey::Template(template_hash.clone()), &family);
         e.events().publish(
             (Symbol::new(&e, "TemplateRegistered"),),
             (template_hash, family),
@@ -109,22 +113,33 @@ impl StrategyRegistry {
 
     pub fn remove_template(e: Env, template_hash: BytesN<32>) {
         require_admin(&e);
-        e.storage().instance().remove(&DataKey::Template(template_hash));
+        e.storage()
+            .instance()
+            .remove(&DataKey::Template(template_hash));
     }
 
     pub fn add_venue(e: Env, venue: Address) {
         require_admin(&e);
-        let mut v: Vec<Address> = e.storage().instance().get(&DataKey::Venues).unwrap_or(Vec::new(&e));
+        let mut v: Vec<Address> = e
+            .storage()
+            .instance()
+            .get(&DataKey::Venues)
+            .unwrap_or(Vec::new(&e));
         if !v.contains(&venue) {
             v.push_back(venue.clone());
             e.storage().instance().set(&DataKey::Venues, &v);
-            e.events().publish((Symbol::new(&e, "VenueRegistered"),), (venue,));
+            e.events()
+                .publish((Symbol::new(&e, "VenueRegistered"),), (venue,));
         }
     }
 
     pub fn remove_venue(e: Env, venue: Address) {
         require_admin(&e);
-        let v: Vec<Address> = e.storage().instance().get(&DataKey::Venues).unwrap_or(Vec::new(&e));
+        let v: Vec<Address> = e
+            .storage()
+            .instance()
+            .get(&DataKey::Venues)
+            .unwrap_or(Vec::new(&e));
         let mut out = Vec::new(&e);
         for i in 0..v.len() {
             let a = v.get(i).unwrap();
@@ -157,11 +172,16 @@ impl StrategyRegistry {
     }
 
     pub fn venues(e: Env) -> Vec<Address> {
-        e.storage().instance().get(&DataKey::Venues).unwrap_or(Vec::new(&e))
+        e.storage()
+            .instance()
+            .get(&DataKey::Venues)
+            .unwrap_or(Vec::new(&e))
     }
 
     pub fn template_family(e: Env, template_hash: BytesN<32>) -> Option<Symbol> {
-        e.storage().instance().get(&DataKey::Template(template_hash))
+        e.storage()
+            .instance()
+            .get(&DataKey::Template(template_hash))
     }
 
     pub fn strategy_info(e: Env, strategy: Address) -> Option<StrategyInfo> {
@@ -209,18 +229,28 @@ impl StrategyRegistry {
             }
         }
 
-        let venues: Vec<Address> = e.storage().instance().get(&DataKey::Venues).unwrap_or(Vec::new(&e));
+        let venues: Vec<Address> = e
+            .storage()
+            .instance()
+            .get(&DataKey::Venues)
+            .unwrap_or(Vec::new(&e));
         for idx in [0u32, 1u32, 6u32] {
-            let v = new_init_args.get(idx).unwrap_or_else(|| panic_with_error!(&e, RegError::InvalidInitArgs));
-            let a = Address::try_from_val(&e, &v).unwrap_or_else(|_| panic_with_error!(&e, RegError::InvalidInitArgs));
+            let v = new_init_args
+                .get(idx)
+                .unwrap_or_else(|| panic_with_error!(&e, RegError::InvalidInitArgs));
+            let a = Address::try_from_val(&e, &v)
+                .unwrap_or_else(|_| panic_with_error!(&e, RegError::InvalidInitArgs));
             if !venues.contains(&a) {
                 panic_with_error!(&e, RegError::VenueNotAllowed);
             }
         }
 
         // Policy is init_args[4] for cl_aquarius-family templates.
-        let policy_val = new_init_args.get(4).unwrap_or_else(|| panic_with_error!(&e, RegError::InvalidInitArgs));
-        let policy = Policy::try_from_val(&e, &policy_val).unwrap_or_else(|_| panic_with_error!(&e, RegError::InvalidInitArgs));
+        let policy_val = new_init_args
+            .get(4)
+            .unwrap_or_else(|| panic_with_error!(&e, RegError::InvalidInitArgs));
+        let policy = Policy::try_from_val(&e, &policy_val)
+            .unwrap_or_else(|_| panic_with_error!(&e, RegError::InvalidInitArgs));
         check_policy(&e, &policy);
 
         // The strategy constructor is __constructor(asset, init_args).
@@ -268,17 +298,20 @@ impl StrategyRegistry {
         e.invoke_contract::<()>(
             &strategy,
             &Symbol::new(&e, "bind"),
-            Vec::from_array(&e, [
-                e.current_contract_address().into_val(&e),
-                vault.clone().into_val(&e),
-            ]),
+            Vec::from_array(
+                &e,
+                [
+                    e.current_contract_address().into_val(&e),
+                    vault.clone().into_val(&e),
+                ],
+            ),
         );
         info.bound_vault = Some(vault.clone());
-        e.storage().instance().set(&DataKey::Deployed(strategy.clone()), &info);
-        e.events().publish(
-            (Symbol::new(&e, "StrategyBound"),),
-            (strategy, vault),
-        );
+        e.storage()
+            .instance()
+            .set(&DataKey::Deployed(strategy.clone()), &info);
+        e.events()
+            .publish((Symbol::new(&e, "StrategyBound"),), (strategy, vault));
     }
 
     /// Public policy check used by strategies on `set_policy`.
@@ -288,7 +321,11 @@ impl StrategyRegistry {
 }
 
 fn check_policy(e: &Env, p: &Policy) {
-    if let Some(c) = e.storage().instance().get::<DataKey, Ceilings>(&DataKey::Ceilings) {
+    if let Some(c) = e
+        .storage()
+        .instance()
+        .get::<DataKey, Ceilings>(&DataKey::Ceilings)
+    {
         if p.perf_fee_bps > c.max_perf_fee_bps
             || p.max_slippage_bps > c.max_slippage_bps
             || p.oracle_band_bps > c.max_oracle_band_bps
@@ -299,7 +336,11 @@ fn check_policy(e: &Env, p: &Policy) {
             panic_with_error!(e, RegError::PolicyExceedsCeiling);
         }
     }
-    let venues: Vec<Address> = e.storage().instance().get(&DataKey::Venues).unwrap_or(Vec::new(e));
+    let venues: Vec<Address> = e
+        .storage()
+        .instance()
+        .get(&DataKey::Venues)
+        .unwrap_or(Vec::new(e));
     for i in 0..p.swap_allowed.len() {
         if !venues.contains(&p.swap_allowed.get(i).unwrap()) {
             panic_with_error!(e, RegError::VenueNotAllowed);

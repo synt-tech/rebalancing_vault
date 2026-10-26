@@ -111,6 +111,9 @@ pool/oracle fixtures:
 
 ## Coverage gaps (next tests to write)
 
+- **Fork test execution** — `test_fork` is ready but ignored: real WASMs
+  need env-host ≥v25 (workspace pins SDK 22). Unblock via SDK upgrade,
+  then this replaces the mock entirely — see `testing/fork/README.md`.
 - **Position unwind path in `withdraw`** — currently only idle-funded
   withdrawal is unit-tested; pro-rata `withdraw_position` + foreign-leg
   conversion needs a mock that returns position value.

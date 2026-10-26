@@ -38,4 +38,5 @@ wallet (Freighter) to deposit/withdraw and watch keeper rebalances.
 
 ## Source
 
-https://github.com/synt-tech/hackmeridian2026-automated-rebalancing-vault
+Live site: https://synt.tech/hackmeridian2026-automated-rebalancing-vault/
+Repository: https://github.com/synt-tech/hackmeridian2026-automated-rebalancing-vault

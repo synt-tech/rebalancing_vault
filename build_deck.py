@@ -137,7 +137,7 @@ CONTENT = {
             "deposit routine where one bad execution costs more than",
             "days of fees.",
         ],
-        strip="👉 Lived it: our own manual rebalances — and a clamp that later caught a route priced 38% off. Live, on testnet.",
+        strip="👉 We lived it: on a real testnet rebalance, one route quoted ~38% off fair price — our on-chain price bound reverted it. A manual LP would have eaten the loss.",
     ),
     "solution": dict(
         title="THE SOLUTION",

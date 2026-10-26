@@ -198,14 +198,13 @@ of them, is open territory.
 
 ## Design stance (carried over from prior work)
 
-The prototype (extracted at `synt_dex/rocky-rebalancer/`,
-`contracts/rocky-vault/`) is **deployed and exercised on testnet**
+The synt_dex rebalancer prototype is **deployed and exercised on testnet**
 (2026-10-02): vault `CBHV4KFGKKYJPS6CB65JCPERSWPTEO4AZJ5A7UYLAUJMTU2L2NELT4GA`
 managing an XLM/AQUA CL position — opened, then rebalanced through the 1%
 route pool to a 3055 bps token1 share. A first attempt through the 0.3%
 pool correctly reverted: its price was ~38% off the CL reference, so the
 required input exceeded the fair-price bound — the clamp caught a bad
-route live. Testnet keys exist in the stellar CLI: `admin`, `rocky-keeper`.
+route live.
 
 - **Private contract-owned position**; `admin` (funds/policy) + `keeper`
   (submits `RebalancePlan`) — Gamma's `onlyOwner` + Revert's

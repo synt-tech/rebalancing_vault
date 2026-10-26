@@ -11,6 +11,28 @@ const MAX_SWAP_STEPS: u32 = 5;
 pub const ORACLE_SCALE: i128 = 100_000_000_000_000; // 1e14
 const TWO_POW_96: u128 = 0x1_0000_0000_0000_0000_0000_0000;
 
+/// Checked arithmetic on externally-derived magnitudes (oracle prices,
+/// pool balances/estimates, keeper-supplied amounts): an adversarial or
+/// malformed value must produce `UnderflowOverflow`, not a trap.
+pub fn cmul(a: i128, b: i128) -> Result<i128, StrategyError> {
+    a.checked_mul(b).ok_or(StrategyError::UnderflowOverflow)
+}
+pub fn cdiv(a: i128, b: i128) -> Result<i128, StrategyError> {
+    a.checked_div(b).ok_or(StrategyError::DivisionByZero)
+}
+pub fn cadd(a: i128, b: i128) -> Result<i128, StrategyError> {
+    a.checked_add(b).ok_or(StrategyError::UnderflowOverflow)
+}
+pub fn csub(a: i128, b: i128) -> Result<i128, StrategyError> {
+    a.checked_sub(b).ok_or(StrategyError::UnderflowOverflow)
+}
+pub fn cmul_u(a: u128, b: u128) -> Result<u128, StrategyError> {
+    a.checked_mul(b).ok_or(StrategyError::UnderflowOverflow)
+}
+pub fn cdiv_u(a: u128, b: u128) -> Result<u128, StrategyError> {
+    a.checked_div(b).ok_or(StrategyError::DivisionByZero)
+}
+
 /// Fresh oracle price of `asset` in USDC (1e14 scale), or error.
 pub fn oracle_price(e: &Env, oracle: &Address, asset: &Address, p: &Policy) -> Result<i128, StrategyError> {
     let pd = ReflectorClient::new(e, oracle)
@@ -52,8 +74,8 @@ pub fn check_oracle_band(
         return Err(StrategyError::DivisionByZero);
     }
     // oracle token1/token0 ratio in 1e14 scale
-    let ratio = (p1 as i128 * ORACLE_SCALE / p0 as i128) as u128;
-    let band = (ratio * p.oracle_band_bps as u128) / BPS as u128;
+    let ratio = cdiv(cmul(p1 as i128, ORACLE_SCALE)?, p0 as i128)? as u128;
+    let band = cdiv_u(cmul_u(ratio, p.oracle_band_bps as u128)?, BPS as u128)?;
     if spot.abs_diff(ratio) > band {
         return Err(StrategyError::InvalidArgument);
     }
@@ -76,7 +98,7 @@ pub fn ref_price_1e14(
     if p0 <= 0 {
         return Err(StrategyError::DivisionByZero);
     }
-    Ok(p1 * ORACLE_SCALE / p0)
+    cdiv(cmul(p1, ORACLE_SCALE)?, p0)
 }
 
 /// Value the stored position + uncollected LP fees + idle, denominated in the
@@ -88,7 +110,8 @@ pub fn ref_price_1e14(
 pub fn spendable(e: &Env, token: &Address) -> i128 {
     let me = e.current_contract_address();
     let raw = TokenClient::new(e, token).balance(&me);
-    raw - owed(e, Role::Platform, token) - owed(e, Role::Operator, token)
+    raw.saturating_sub(owed(e, Role::Platform, token))
+        .saturating_sub(owed(e, Role::Operator, token))
 }
 
 pub fn compute_balance(
@@ -110,23 +133,25 @@ pub fn compute_balance(
     if let Some(pos) = pos {
         if pos.liquidity > 0 {
             let est = pool.estimate_withdraw_position(&me, &pos.tick_lower, &pos.tick_upper, &pos.liquidity);
-            v0 += est.get(0).unwrap_or(0) as i128;
-            v1 += est.get(1).unwrap_or(0) as i128;
+            v0 = cadd(v0, i128::try_from(est.get(0).unwrap_or(0)).map_err(|_| StrategyError::UnderflowOverflow)?)?;
+            v1 = cadd(v1, i128::try_from(est.get(1).unwrap_or(0)).map_err(|_| StrategyError::UnderflowOverflow)?)?;
             // uncollected LP fees net of the performance fee
             let fees = pool.get_position_fees(&me, &pos.tick_lower, &pos.tick_upper);
-            let keep = BPS - p.perf_fee_bps as i128;
-            v0 += fees.get(0).unwrap_or(0) as i128 * keep / BPS;
-            v1 += fees.get(1).unwrap_or(0) as i128 * keep / BPS;
+            let keep = csub(BPS, p.perf_fee_bps as i128)?;
+            let f0 = i128::try_from(fees.get(0).unwrap_or(0)).map_err(|_| StrategyError::UnderflowOverflow)?;
+            let f1 = i128::try_from(fees.get(1).unwrap_or(0)).map_err(|_| StrategyError::UnderflowOverflow)?;
+            v0 = cadd(v0, cdiv(cmul(f0, keep)?, BPS)?)?;
+            v1 = cadd(v1, cdiv(cmul(f1, keep)?, BPS)?)?;
         }
     }
     // Spendable idle only — fees_owed excluded for BOTH tokens.
-    v0 += spendable(e, token0);
-    v1 += spendable(e, token1);
+    v0 = cadd(v0, spendable(e, token0))?;
+    v1 = cadd(v1, spendable(e, token1))?;
 
     let total_asset = if asset_is_0 {
-        v0 + v1 * ORACLE_SCALE / ref_px
+        cadd(v0, cdiv(cmul(v1, ORACLE_SCALE)?, ref_px)?)?
     } else {
-        v0 * ref_px / ORACLE_SCALE + v1
+        cadd(cdiv(cmul(v0, ref_px)?, ORACLE_SCALE)?, v1)?
     };
     Ok(total_asset.max(0))
 }
@@ -138,12 +163,13 @@ pub fn skim(e: &Env, token: &Address, income: u128, source: Symbol, p: &Policy) 
     if income == 0 || p.perf_fee_bps == 0 {
         return Ok(());
     }
-    let fee = income as i128 * p.perf_fee_bps as i128 / BPS;
+    let inc = i128::try_from(income).map_err(|_| StrategyError::UnderflowOverflow)?;
+    let fee = cdiv(cmul(inc, p.perf_fee_bps as i128)?, BPS)?;
     if fee == 0 {
         return Ok(());
     }
-    let platform = fee * p.platform_split_bps as i128 / BPS;
-    let operator = fee - platform;
+    let platform = cdiv(cmul(fee, p.platform_split_bps as i128)?, BPS)?;
+    let operator = csub(fee, platform)?;
     add_owed(e, Role::Platform, token, platform);
     add_owed(e, Role::Operator, token, operator);
     e.events().publish(
@@ -159,7 +185,7 @@ pub fn add_owed(e: &Env, role: Role, token: &Address, amt: i128) {
     }
     let k = DataKey::FeesOwed(role, token.clone());
     let cur: i128 = e.storage().instance().get(&k).unwrap_or(0);
-    e.storage().instance().set(&k, &(cur + amt));
+    e.storage().instance().set(&k, &cur.saturating_add(amt));
 }
 
 pub fn owed(e: &Env, role: Role, token: &Address) -> i128 {
@@ -194,8 +220,8 @@ pub fn validate_plan(e: &Env, plan: &SwapPlan, p: &Policy, spacing: i32) -> Resu
         }
         let in_amt = i128::try_from(s.in_amount).map_err(|_| StrategyError::InvalidArgument)?;
         let out_min = i128::try_from(s.out_min).map_err(|_| StrategyError::InvalidArgument)?;
-        let fair_out = in_amt * p_in / p_out;
-        let min_out = fair_out * (BPS - p.max_slippage_bps as i128) / BPS;
+        let fair_out = cdiv(cmul(in_amt, p_in)?, p_out)?;
+        let min_out = cdiv(cmul(fair_out, csub(BPS, p.max_slippage_bps as i128)?)?, BPS)?;
         if out_min < min_out {
             return Err(StrategyError::InvalidArgument);
         }
@@ -207,12 +233,12 @@ pub fn validate_plan(e: &Env, plan: &SwapPlan, p: &Policy, spacing: i32) -> Resu
         }
         // Range half-width within policy bounds: (tu-tl)/2 in ticks
         // (tick ≈ ln(1.0001) steps, so |Δtick| ≈ price deviation in bps).
-        let half = ((tu - tl) / 2) as u32;
+        let half = (tu.checked_sub(tl).ok_or(StrategyError::InvalidArgument)? / 2) as u32;
         if half < p.range_min_bps || half > p.range_max_bps {
             return Err(StrategyError::InvalidArgument);
         }
-        let center = (tl + tu) / 2;
-        if (center - plan.ref_tick).abs() > p.tick_cap_bps as i32 {
+        let center = tl.checked_add(tu).ok_or(StrategyError::InvalidArgument)? / 2;
+        if center.checked_sub(plan.ref_tick).ok_or(StrategyError::InvalidArgument)?.abs() > p.tick_cap_bps as i32 {
             return Err(StrategyError::InvalidArgument);
         }
     }

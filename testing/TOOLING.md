@@ -65,4 +65,5 @@ how actionable each is for this project **today**.
 6. Sunbeam/Komet + Audit Bank only if shipping to mainnet.
 
 Not installed locally yet: `cargo-fuzz` (needs a nightly toolchain),
-`cargo-mutants`, `cargo-scout-audit`.
+`cargo-mutants`. **Installed**: `cargo-scout-audit` 0.3.17 — run results
+in `AUDIT.md` (cl_aquarius at 0 critical findings).

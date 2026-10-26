@@ -77,13 +77,40 @@ Read together with `../DEPLOYMENTS.md` (deployed addresses) and
 - ~~`min_reward_swap` gate ran post-claim, stranding below-threshold
   rewards as unvalued custody dust that could never retry.~~ Fixed: the
   gate now reads `get_user_reward` and skips claiming entirely below the
-  threshold — rewards accrue pool-side. (`rewards_below_min_swap_stay_unclaimed`)
+  threshold — rewards accrue pool-side. (`rewards_below_min_swap_unclaimed`)
 - ~~Deployment path untested (residual #1).~~ Covered:
   `platform/src/test.rs` runs `create_vault` E2E against real
   factory+vault WASMs with junk `init_args[2..3]` proving pinning.
 - ~~§9 reward/edge cases untested.~~ Covered: unclaimed-excluded-from-
   `balance()`, withdraw-never-claims, expired plan, cooldown + recovery,
   fee-leg conservation.
+
+## Static analysis (Scout / cargo-scout-audit 0.3.17)
+
+- First run: **37 critical** (unchecked arithmetic) + 41 medium on
+  `cl_aquarius`. Fixed: all arithmetic on externally-derived magnitudes
+  (oracle prices, pool estimates, keeper amounts, claimed/pending
+  rewards, balances, `BPS − policy_*_bps` keep factors) now uses checked
+  ops returning `UnderflowOverflow`/`DivisionByZero` — an adversarial
+  pool/oracle value errors instead of trapping. `spendable` and
+  `add_owed` saturate.
+- Second run: **0 critical** on every production crate; `test_mocks`
+  keeps its own findings (test fixture).
+- Remaining mediums triaged — none exploitable:
+  - 46 `unwrap` flags: `tokens.get(0)`-style reads on malformed external
+    responses panic → revert, semantically equal to a typed error.
+  - 5 "unbounded ops": `plan.steps` is capped at `MAX_SWAP_STEPS = 5`;
+    registry loops iterate admin-curated lists or the caller's own args
+    (self-DoS only).
+  - "Vec/Map params unvalidated": `deploy_strategy`/`create_vault`
+    *do* validate `init_args` shape, venues, and policy.
+  - `extend_ttl(100_000, 100_000)` identical args — deliberate.
+
+## Tooling status
+
+`cargo-scout-audit` 0.3.17 installed and run locally — see
+`TOOLING.md` for the full ecosystem inventory (fuzz, fork testing,
+formal verification).
 
 ## Known weaknesses / follow-ups
 

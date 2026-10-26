@@ -169,15 +169,15 @@ impl DeFindexStrategyTrait for ClAquarius {
                     .min(pos.liquidity as i128) as u128;
                 if liq_out > 0 {
                     let est = pool.estimate_withdraw_position(&me, &pos.tick_lower, &pos.tick_upper, &liq_out);
-                    let keep = (BPS - policy.max_slippage_bps as i128) as u128;
+                    let keep = u128::try_from(csub(BPS, policy.max_slippage_bps as i128)?).map_err(|_| StrategyError::UnderflowOverflow)?;
                     let mins = soroban_sdk::vec![
                         &e,
-                        est.get(0).unwrap_or(0) * keep / BPS as u128,
-                        est.get(1).unwrap_or(0) * keep / BPS as u128
+                        cdiv_u(cmul_u(est.get(0).unwrap_or(0), keep)?, BPS as u128)?,
+                        cdiv_u(cmul_u(est.get(1).unwrap_or(0), keep)?, BPS as u128)?
                     ];
                     pool.withdraw_position(&me, &pos.tick_lower, &pos.tick_upper, &liq_out, &mins);
                     let mut p = pos.clone();
-                    p.liquidity -= liq_out;
+                    p.liquidity = p.liquidity.checked_sub(liq_out).ok_or(StrategyError::UnderflowOverflow)?;
                     if p.liquidity == 0 {
                         e.storage().instance().remove(&DataKey::Position);
                     } else {
@@ -194,25 +194,26 @@ impl DeFindexStrategyTrait for ClAquarius {
         let idle_asset = spendable(&e, asset_tok);
         let mut delivered = idle_asset.min(amount);
         if delivered < amount {
-            let shortfall = amount - delivered;
+            let shortfall = csub(amount, delivered)?;
             // foreign input needed: shortfall in asset units → foreign units
             let needed_foreign = if asset_is_0 {
-                shortfall * cl_core::ORACLE_SCALE / ref_px
+                cdiv(cmul(shortfall, cl_core::ORACLE_SCALE)?, ref_px)?
             } else {
-                shortfall * ref_px / cl_core::ORACLE_SCALE
+                cdiv(cmul(shortfall, ref_px)?, cl_core::ORACLE_SCALE)?
             };
             let avail_foreign = spendable(&e, foreign);
             let swap_in = needed_foreign.min(avail_foreign);
             if swap_in > 0 {
-                let out_min = (if asset_is_0 {
-                    swap_in * ref_px / cl_core::ORACLE_SCALE
+                let gross = if asset_is_0 {
+                    cdiv(cmul(swap_in, ref_px)?, cl_core::ORACLE_SCALE)?
                 } else {
-                    swap_in * cl_core::ORACLE_SCALE / ref_px
-                }) * (BPS - policy.max_slippage_bps as i128) / BPS;
+                    cdiv(cmul(swap_in, cl_core::ORACLE_SCALE)?, ref_px)?
+                };
+                let out_min = cdiv(cmul(gross, csub(BPS, policy.max_slippage_bps as i128)?)?, BPS)?;
                 let (in_idx, out_idx) = if asset_is_0 { (1u32, 0u32) } else { (0u32, 1u32) };
                 authorize_pull(&e, foreign, &pool_addr, swap_in);
                 let got = pool.swap(&me, &in_idx, &out_idx, &(swap_in as u128), &(out_min as u128));
-                delivered += got as i128;
+                delivered = cadd(delivered, i128::try_from(got).map_err(|_| StrategyError::UnderflowOverflow)?)?;
             }
         }
         delivered = delivered.min(amount);
@@ -490,7 +491,7 @@ fn claim_and_convert_rewards(e: &Env, pool_addr: &Address, asset: &Address, poli
     // threshold so the reward stays pool-side and can cross it later.
     let p_rew = oracle_price(e, &oracle, &reward_tok, policy)?;
     let p_asset = oracle_price(e, &oracle, asset, policy)?;
-    if pending * p_rew / p_asset < policy.min_reward_swap {
+    if cdiv(cmul(pending, p_rew)?, p_asset)? < policy.min_reward_swap {
         return Ok(());
     }
 
@@ -508,11 +509,11 @@ fn claim_and_convert_rewards(e: &Env, pool_addr: &Address, asset: &Address, poli
     };
     let p_out = oracle_price(e, &oracle, &out_tok, policy)?;
     // oracle-derived min-out (equal token decimals assumed, see balance())
-    let fair_out = claimed * p_rew / p_out;
-    let out_min = fair_out * (BPS - policy.max_slippage_bps as i128) / BPS;
+    let fair_out = cdiv(cmul(claimed, p_rew)?, p_out)?;
+    let out_min = cdiv(cmul(fair_out, csub(BPS, policy.max_slippage_bps as i128)?)?, BPS)?;
     authorize_pull(e, &reward_tok, &reward_pool_addr, claimed);
-    let got = rp.swap(&me, &in_idx, &out_idx, &(claimed as u128), &(out_min as u128)) as i128;
-    skim(e, &out_tok, got as u128, Symbol::new(e, "rewards"), policy)
+    let got_u = rp.swap(&me, &in_idx, &out_idx, &(claimed as u128), &(out_min as u128));
+    skim(e, &out_tok, got_u, Symbol::new(e, "rewards"), policy)
 }
 
 fn compute_balance_now(e: &Env, pool_addr: &Address, asset: &Address, policy: &Policy) -> Result<i128, StrategyError> {
@@ -538,14 +539,15 @@ fn check_loss_budget(e: &Env, new_bal: i128, policy: &Policy, now: u64) -> Resul
     if new_bal >= prev || prev <= 0 {
         return Ok(());
     }
-    let loss_bps = (prev - new_bal) * BPS / prev;
+    let loss_bps = cdiv(cmul(csub(prev, new_bal)?, BPS)?, prev)?;
     let (w_start, used): (u64, i128) = e
         .storage()
         .instance()
         .get(&DataKey::LossTracker)
         .unwrap_or((now, 0));
-    let (ws, mut u) = if now >= w_start + policy.loss_window_secs { (now, 0) } else { (w_start, used) };
-    u += loss_bps;
+    let window_end = w_start.checked_add(policy.loss_window_secs).ok_or(StrategyError::UnderflowOverflow)?;
+    let (ws, mut u) = if now >= window_end { (now, 0) } else { (w_start, used) };
+    u = cadd(u, loss_bps)?;
     if u > policy.max_loss_bps_per_window as i128 {
         return Err(StrategyError::NotAuthorized);
     }

@@ -150,7 +150,11 @@ impl DeFindexStrategyTrait for ClAquarius {
             amount,
             from,
         );
-        compute_balance_now(&e, &pool_addr, &asset, &policy)
+        // Seed LastBalance — otherwise the first harvest's `unwrap_or(new_bal)`
+        // fallback records zero loss no matter how bad the trade was.
+        let b = compute_balance_now(&e, &pool_addr, &asset, &policy)?;
+        set(&e, &DataKey::LastBalance, &b);
+        Ok(b)
     }
 
     fn withdraw(e: Env, amount: i128, from: Address, to: Address) -> Result<i128, StrategyError> {
@@ -271,6 +275,11 @@ impl DeFindexStrategyTrait for ClAquarius {
             delivered,
             to,
         );
+        // Refresh the loss baseline — a vault-side withdrawal is not a
+        // keeper loss and must not consume the loss-window budget.
+        if let Ok(b) = compute_balance_now(&e, &pool_addr, &asset, &policy) {
+            set(&e, &DataKey::LastBalance, &b);
+        }
         Ok(delivered)
     }
 
@@ -512,6 +521,48 @@ impl ClAquarius {
         Ok(())
     }
 
+    /// In-kind rescue: transfer ALL spendable token balances (both pool
+    /// legs, unconverted) to the vault. For the case where the swap route
+    /// is unavailable (halted venue, broken oracle) — `withdraw` would
+    /// revert on the foreign-leg swap and even the asset leg stays locked.
+    /// The vault receives raw tokens it does not share-account; custody
+    /// recovery is the point. Same auth as `emergency_exit` (vault
+    /// EmergencyManager or Manager). Call after `emergency_exit` so the
+    /// position is already unwound into idle custody.
+    pub fn rescue(e: Env, caller: Address) -> Result<Vec<i128>, StrategyError> {
+        extend_ttl(&e);
+        let (vault, _, pool_addr, _) = require_init(&e)?;
+        caller.require_auth();
+        let v = VaultClient::new(&e, &vault);
+        let ok = v
+            .try_get_emergency_manager()
+            .ok()
+            .and_then(|r| r.ok())
+            .map(|m| m == caller)
+            .unwrap_or(false)
+            || v.try_get_manager()
+                .ok()
+                .and_then(|r| r.ok())
+                .map(|m| m == caller)
+                .unwrap_or(false);
+        if !ok {
+            return Err(StrategyError::NotAuthorized);
+        }
+        let tokens = ClPoolClient::new(&e, &pool_addr).get_tokens();
+        let me = e.current_contract_address();
+        let mut out: Vec<i128> = Vec::new(&e);
+        for t in tokens.iter() {
+            let amt = spendable(&e, &t);
+            if amt > 0 {
+                TokenClient::new(&e, &t).transfer(&me, &vault, &amt);
+            }
+            out.push_back(amt);
+        }
+        e.events()
+            .publish((Symbol::new(&e, "Rescue"),), (caller, out.clone()));
+        Ok(out)
+    }
+
     /// Update Policy within registry ceilings (keeper/manager only).
     pub fn set_policy(e: Env, caller: Address, policy: Policy) -> Result<(), StrategyError> {
         extend_ttl(&e);
@@ -616,7 +667,13 @@ fn claim_and_convert_rewards(
 
     // Dust gate on the UNCLAIMED amount: skip claiming entirely below the
     // threshold so the reward stays pool-side and can cross it later.
-    let p_rew = oracle_price(e, &reward_tok, policy)?;
+    // A missing/stale reward feed skips the claim rather than reverting —
+    // rewards keep accruing pool-side and a dead AQUA feed must not brick
+    // every harvest while the managed-pair oracle is healthy.
+    let p_rew = match oracle_price(e, &reward_tok, policy) {
+        Ok(p) => p,
+        Err(_) => return Ok(()),
+    };
     let p_asset = oracle_price(e, asset, policy)?;
     if cdiv(cmul(pending, p_rew)?, p_asset)? < policy.min_reward_swap {
         return Ok(());

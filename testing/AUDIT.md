@@ -154,23 +154,23 @@ formal verification).
 - [ ] Reward conversion assumes a single-hop `reward_pool` pairing the
       reward token with a managed token; multi-hop rewards (or
       reward_token == managed token edge case) not handled.
-- [ ] `emergency_exit` keeps both pool tokens in strategy custody —
-      claimable later, but no `claim_fees`-style rescue entry point for
-      them yet; withdrawal flow assumes a working conversion path unless
-      the vault lists both tokens (in-kind rescue option).
+- [x] ~~`emergency_exit` keeps both pool tokens in strategy custody~~ —
+      `rescue(caller)` now delivers both legs in-kind to the vault
+      (EM/Manager auth). Platform-side passthrough still unwired —
+      call `rescue` directly for now.
 - [ ] No reentrancy guard needed (Soroban model), but cross-contract call
       ordering in `harvest` (claim → unwind → swap → redeploy → post
       oracle check) should be re-reviewed for sandwich surface inside the
       band.
 - [ ] Registry `deploy_strategy` parses `init_args[4]` as `Policy` —
       brittle to constructor-arg reordering; add a shape/version check.
-- [ ] `platform.pause_strategy`/`unpause_strategy`/`rescue_vault` are
-      admin-only but their auth flow on-chain is exercised only via
-      EmergencyManager role — add testnet verification.
-- [ ] A missing `reward_token` oracle price aborts `harvest` entirely
-      (`claim_and_convert_rewards` propagates) even though the managed-pool
-      band check already passed — reward conversion is opportunistic and
-      could be made failure-isolated if that proves too strict.
+- [x] ~~`platform.pause_strategy`/`unpause_strategy`/`rescue_vault`
+      testnet verification~~ — done; surfaced and fixed the missing
+      caller-arg/invoker-auth bug (platform v2 `CDKAKRSZ…`, txs
+      `7eb70987…`/`586ab9a9…`).
+- [x] ~~A missing `reward_token` oracle price aborts `harvest`~~ —
+      now failure-isolated: stale/missing reward feed skips the claim
+      (rewards keep accruing pool-side).
 - [ ] Fee receiver without a pool-token trustline and AQUA conversion
       under-delivering below oracle min-out — not reproducible with the
       current mocks (SAC trustlines always exist in tests; the mock pool
@@ -221,6 +221,50 @@ formal verification).
 - **Lesson** — every wrapper-level proxy method needs at least one
   end-to-end exercise against the real callee WASM; mock-auth unit
   tests cannot catch arity or invoker-auth gaps on their own.
+
+## Found in the coverage push (2026-10-26, all fixed + tested)
+
+- **Stale reward feed bricked harvest** — `claim_and_convert_rewards`
+  propagated `oracle_price(reward_token)` failure, so a dead/stale AQUA
+  feed reverted every harvest while the managed-pair feed was healthy.
+  Now skips the claim like the dust gate — rewards keep accruing
+  pool-side. Test: `stale_reward_oracle_skips_claim`.
+- **`LastBalance` never seeded on deposit** — the loss-budget baseline
+  only existed after the first harvest (`unwrap_or(new_bal)` recorded
+  zero loss for it). `deposit` now stores the computed balance so the
+  first harvest's loss is measured against post-deposit value.
+- **Withdrawals mis-charged the loss budget** — `LastBalance` was not
+  refreshed on `withdraw`, so a vault-side withdrawal between harvests
+  would be booked as keeper loss on the next harvest. Post-withdraw
+  balance is now stored (skipped on oracle failure — `balance()`
+  fallback covers it).
+- **No in-kind rescue path existed** — `withdraw` hard-requires the
+  foreign-leg swap, so on a halted venue even the asset leg was locked
+  (`emergency_exit` only moved funds to strategy custody). Added
+  `strategy.rescue(caller) -> Vec<i128>`: EmergencyManager/Manager auth,
+  transfers all *spendable* balances of both pool tokens to the vault
+  raw (vault does not share-account the foreign leg — custody recovery
+  is the point). Tests: `rescue_delivers_both_legs_in_kind`,
+  `rescue_rejects_unauthorized`. Deployed strategy hash becomes
+  `57720813…` — a v5 redeploy is needed to ship it on testnet.
+- **Not a bug**: `max_reward_age` is a keeper-SLA knob by design
+  (cadence bound, §"the keeper harvests at least every max_reward_age")
+  — it is informational in `Policy`, correctly not enforced on-chain.
+
+## Coverage added in this push
+
+- `loss_budget_accumulates_then_reverts_at_cap` — cumulative window
+  budget caps repeated keeper losses; the rejecting harvest rolls its
+  swap back atomically.
+- `loss_budget_resets_after_window` — tracker resets past
+  `loss_window_secs` (oracle must be re-seeded: prices age too).
+- `mid_harvest_failure_reverts_atomically` — a validating-but-
+  overdrawn second swap leg reverts the whole harvest; position and
+  balances unchanged.
+- `set_policy_*` — real `strategy_registry.wasm` wired as registry:
+  within-ceiling applies; over-ceiling, unlisted venue, and non-keeper
+  callers all revert.
+- `stale_reward_oracle_skips_claim`, `rescue_*` above.
 
 ## Not yet audited
 

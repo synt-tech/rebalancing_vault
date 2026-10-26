@@ -64,10 +64,15 @@ struct Fixture {
 /// Managed pool = XLM/USDC (t0=XLM, t1=USDC, asset=USDC). Spot set so
 /// implied ratio = p_usdc/p_xlm = 1e14/4e13 = 2.5e14 → sqrtP = √2.5·2^96.
 fn setup() -> Fixture {
-    setup_with(0, 1)
+    setup_fixture(|e, v| make_policy_with(e, v.clone(), 0, 1))
 }
 
 fn setup_with(cooldown_secs: u64, min_reward_swap: i128) -> Fixture {
+    setup_fixture(|e, v| make_policy_with(e, v.clone(), cooldown_secs, min_reward_swap))
+}
+
+/// Fixture with caller-constructed Policy (loss cap, ceilings tests, etc).
+fn setup_fixture(build_policy: impl FnOnce(&Env, &Vec<Address>) -> Policy) -> Fixture {
     let e = Env::default();
     e.cost_estimate().budget().reset_unlimited();
     e.mock_all_auths_allowing_non_root_auth();
@@ -117,12 +122,8 @@ fn setup_with(cooldown_secs: u64, min_reward_swap: i128) -> Fixture {
         );
     }
 
-    let policy = make_policy_with(
-        &e,
-        vec![&e, pool.clone(), reward_pool.clone()],
-        cooldown_secs,
-        min_reward_swap,
-    );
+    let venues: Vec<Address> = vec![&e, pool.clone(), reward_pool.clone()];
+    let policy = build_policy(&e, &venues);
     let init_args: Vec<soroban_sdk::Val> = vec![
         &e,
         pool.clone().into_val(&e),
@@ -815,4 +816,382 @@ fn decode_plan_from_hex() {
     let b = soroban_sdk::Bytes::from_slice(&e, &v);
     let r = SwapPlan::from_xdr(&e, &b);
     assert!(r.is_ok());
+}
+
+// ==================== Loss budget ====================
+
+/// Swap step that realizes a ~2% loss: `out_min` is set safely above the
+/// validation floor (fair × (1 − max_slippage)=97%), and the mock pays
+/// `out_min` — so the value destroyed is deterministic.
+fn lossy_step(pool: &Address, in_idx: u32, in_amt: u128, fair_out: u128) -> SwapStep {
+    SwapStep {
+        pool: pool.clone(),
+        in_idx,
+        out_idx: 1 - in_idx,
+        in_amount: in_amt,
+        out_min: fair_out * 98 / 100,
+    }
+}
+
+/// USDC→XLM fair_out = in × $usdc/$xlm = in × 2.5; XLM→USDC = in × 0.4.
+fn plan_of(e: &Env, step: SwapStep, expiry: u64) -> SwapPlan {
+    SwapPlan {
+        steps: vec![e, step],
+        ref_tick: 0,
+        expiry,
+        new_range: RangeSpec {
+            tick_lower: 0,
+            tick_upper: 0,
+        },
+    }
+}
+
+/// Cumulative loss across harvests is tracked per window; exceeding
+/// `max_loss_bps_per_window` reverts — atomically, so the lossy swap in
+/// the rejected harvest is rolled back too.
+#[test]
+fn loss_budget_accumulates_then_reverts_at_cap() {
+    let f = setup_fixture(|e, v| {
+        let mut p = make_policy_with(e, v.clone(), 0, 1);
+        p.max_loss_bps_per_window = 300; // one ~200bps loss fits; two don't
+        p
+    });
+    mint(&f.e, &f.usdc, &f.vault, 10_000_000_000);
+    f.strategy.deposit(&10_000_000_000, &f.vault);
+    mint(&f.e, &f.xlm, &f.pool, 200_000_000_000); // swap payout liquidity
+    mint(&f.e, &f.usdc, &f.pool, 100_000_000_000);
+
+    // Harvest 1: swap all USDC→XLM, mock pays 98% of fair → ~200bps loss. OK.
+    let plan1 = plan_of(
+        &f.e,
+        lossy_step(&f.pool, 1, 10_000_000_000, 25_000_000_000),
+        2_000_000_000,
+    );
+    f.strategy.harvest(&f.keeper, &Some(plan1.to_xdr(&f.e)));
+
+    // Harvest 2 (same window): swap the XLM back at 98% → cumulative ~400bps
+    // > 300 cap → must revert; atomicity means the swap is rolled back too.
+    let xlm_bal = bal(&f.e, &f.xlm, &f.strategy.address);
+    let plan2 = plan_of(
+        &f.e,
+        lossy_step(&f.pool, 0, xlm_bal as u128, xlm_bal as u128 * 2 / 5),
+        2_000_000_000,
+    );
+    let res = f.strategy.try_harvest(&f.keeper, &Some(plan2.to_xdr(&f.e)));
+    assert!(res.is_err(), "cumulative loss over cap must revert");
+    assert_eq!(
+        bal(&f.e, &f.xlm, &f.strategy.address),
+        xlm_bal,
+        "rejected harvest must roll back its swaps"
+    );
+}
+
+/// A fresh loss window starts after `loss_window_secs`: a second loss
+/// that would have breached the old window's budget passes in the new one.
+#[test]
+fn loss_budget_resets_after_window() {
+    let f = setup_fixture(|e, v| {
+        let mut p = make_policy_with(e, v.clone(), 0, 1);
+        p.max_loss_bps_per_window = 300;
+        p
+    });
+    mint(&f.e, &f.usdc, &f.vault, 10_000_000_000);
+    f.strategy.deposit(&10_000_000_000, &f.vault);
+    mint(&f.e, &f.xlm, &f.pool, 200_000_000_000); // swap payout liquidity
+    mint(&f.e, &f.usdc, &f.pool, 100_000_000_000);
+
+    // harvest 1: USDC→XLM lossy. used ≈ 200 ≤ 300.
+    let plan1 = plan_of(
+        &f.e,
+        lossy_step(&f.pool, 1, 10_000_000_000, 25_000_000_000),
+        2_000_000_000,
+    );
+    f.strategy.harvest(&f.keeper, &Some(plan1.to_xdr(&f.e)));
+
+    // harvest 2 same window → cumulative ≈ 400 > 300 → revert.
+    let xlm_bal = bal(&f.e, &f.xlm, &f.strategy.address);
+    let plan2 = plan_of(
+        &f.e,
+        lossy_step(&f.pool, 0, xlm_bal as u128, xlm_bal as u128 * 2 / 5),
+        2_000_000_000,
+    );
+    assert!(f
+        .strategy
+        .try_harvest(&f.keeper, &Some(plan2.to_xdr(&f.e)))
+        .is_err());
+
+    // Past the 86400s window the tracker resets — the same loss passes.
+    // (h2 was reverted, so the strategy still holds the XLM from h1.
+    // The oracle prices must be re-seeded: they age out at 600s too.)
+    f.e.ledger().set_timestamp(1_700_000_000 + 86_401);
+    for (tok, p) in [
+        (f.usdc.clone(), 100_000_000_000_000i128),
+        (f.xlm.clone(), 40_000_000_000_000i128),
+    ] {
+        f.e.invoke_contract::<()>(
+            &f.oracle,
+            &Symbol::new(&f.e, "set_price"),
+            vec![&f.e, tok.into_val(&f.e), p.into_val(&f.e)],
+        );
+    }
+    let xlm_bal2 = bal(&f.e, &f.xlm, &f.strategy.address);
+    let plan3 = plan_of(
+        &f.e,
+        lossy_step(&f.pool, 0, xlm_bal2 as u128, xlm_bal2 as u128 * 2 / 5),
+        2_000_000_000,
+    );
+    f.strategy.harvest(&f.keeper, &Some(plan3.to_xdr(&f.e)));
+}
+
+/// A swap leg that validates but fails at execution (overdraws the
+/// strategy balance) must revert the WHOLE harvest — the earlier leg,
+/// the position unwind, and the LastHarvest write all roll back.
+#[test]
+fn mid_harvest_failure_reverts_atomically() {
+    let f = setup();
+    mint(&f.e, &f.usdc, &f.vault, 10_000_000_000);
+    f.strategy.deposit(&10_000_000_000, &f.vault);
+    mint(&f.e, &f.xlm, &f.pool, 200_000_000_000); // swap payout liquidity
+    mint(&f.e, &f.usdc, &f.pool, 100_000_000_000);
+    let deploy = SwapPlan {
+        steps: Vec::new(&f.e),
+        ref_tick: 0,
+        expiry: 1_800_000_000,
+        new_range: RangeSpec {
+            tick_lower: -100,
+            tick_upper: 100,
+        },
+    };
+    f.strategy.harvest(&f.keeper, &Some(deploy.to_xdr(&f.e)));
+    let bal_before = f.strategy.balance(&f.vault);
+
+    // Step 1 is valid+small; step 2 validates (out_min ≥ floor) but pulls
+    // 1e18 USDC from a strategy holding ~0 idle → SAC transfer traps.
+    let huge_in: u128 = 1_000_000_000_000_000_000;
+    let bad = SwapPlan {
+        steps: vec![
+            &f.e,
+            SwapStep {
+                pool: f.pool.clone(),
+                in_idx: 1,
+                out_idx: 0,
+                in_amount: 1_000_000,
+                out_min: 2_450_000,
+            },
+            SwapStep {
+                pool: f.pool.clone(),
+                in_idx: 1,
+                out_idx: 0,
+                in_amount: huge_in,
+                out_min: 2_425_000_000_000_000_000,
+            },
+        ],
+        ref_tick: 0,
+        expiry: 1_800_000_000,
+        new_range: RangeSpec {
+            tick_lower: -100,
+            tick_upper: 100,
+        },
+    };
+    assert!(f
+        .strategy
+        .try_harvest(&f.keeper, &Some(bad.to_xdr(&f.e)))
+        .is_err());
+    assert_eq!(
+        f.strategy.balance(&f.vault),
+        bal_before,
+        "failed harvest must leave balance untouched"
+    );
+    // Position survived: an emergency unwind still pays out the funds.
+    f.strategy.emergency_exit(&f.emergency);
+    assert_eq!(f.strategy.balance(&f.vault), bal_before);
+}
+
+// ==================== Reward oracle resilience ====================
+
+/// If the reward token's feed is missing/stale, harvest must skip the
+/// claim instead of reverting — a dead AQUA feed cannot brick rebalance.
+#[test]
+fn stale_reward_oracle_skips_claim() {
+    let f = setup();
+    mint(&f.e, &f.usdc, &f.vault, 10_000_000_000);
+    f.strategy.deposit(&10_000_000_000, &f.vault);
+    f.e.invoke_contract::<()>(
+        &f.pool,
+        &Symbol::new(&f.e, "set_user_reward"),
+        vec![
+            &f.e,
+            f.strategy.address.clone().into_val(&f.e),
+            5_000_000_000u128.into_val(&f.e),
+        ],
+    );
+    // AQUA price timestamped at 0 → age >> max_oracle_age → stale.
+    f.e.invoke_contract::<()>(
+        &f.oracle,
+        &Symbol::new(&f.e, "set_price_ts"),
+        vec![
+            &f.e,
+            f.aqua.clone().into_val(&f.e),
+            20_000_000_000_000i128.into_val(&f.e),
+            0u64.into_val(&f.e),
+        ],
+    );
+    let plan = SwapPlan {
+        steps: Vec::new(&f.e),
+        ref_tick: 0,
+        expiry: 1_800_000_000,
+        new_range: RangeSpec {
+            tick_lower: -100,
+            tick_upper: 100,
+        },
+    };
+    f.strategy.harvest(&f.keeper, &Some(plan.to_xdr(&f.e)));
+    let pending: u128 = f.e.invoke_contract(
+        &f.pool,
+        &Symbol::new(&f.e, "get_user_reward"),
+        vec![&f.e, f.strategy.address.clone().into_val(&f.e)],
+    );
+    assert_eq!(
+        pending, 5_000_000_000,
+        "stale reward feed must leave rewards unclaimed, not brick harvest"
+    );
+}
+
+// ==================== In-kind rescue ====================
+
+/// When the swap route is unavailable, `rescue` pushes both raw token
+/// legs to the vault — the path `withdraw` cannot take.
+#[test]
+fn rescue_delivers_both_legs_in_kind() {
+    let f = setup();
+    mint(&f.e, &f.usdc, &f.vault, 10_000_000_000);
+    f.strategy.deposit(&10_000_000_000, &f.vault);
+    let deploy = SwapPlan {
+        steps: Vec::new(&f.e),
+        ref_tick: 0,
+        expiry: 1_800_000_000,
+        new_range: RangeSpec {
+            tick_lower: -100,
+            tick_upper: 100,
+        },
+    };
+    f.strategy.harvest(&f.keeper, &Some(deploy.to_xdr(&f.e)));
+    // unwind to custody, then rescue both legs to the vault
+    f.strategy.emergency_exit(&f.emergency);
+    // strategy now holds idle USDC (all it ever had)
+    let got = f.strategy.rescue(&f.emergency);
+    assert_eq!(got.get(0).unwrap(), 0, "no XLM leg held");
+    assert_eq!(got.get(1).unwrap(), 10_000_000_000);
+    assert_eq!(bal(&f.e, &f.usdc, &f.vault), 10_000_000_000);
+    assert_eq!(bal(&f.e, &f.usdc, &f.strategy.address), 0);
+}
+
+#[test]
+fn rescue_rejects_unauthorized() {
+    let f = setup();
+    mint(&f.e, &f.usdc, &f.vault, 1_000_000_000);
+    f.strategy.deposit(&1_000_000_000, &f.vault);
+    // keeper is not EmergencyManager/Manager
+    assert!(f.strategy.try_rescue(&f.keeper).is_err());
+}
+
+// ==================== set_policy ceilings (real registry WASM) ====================
+
+const REGISTRY_WASM: &[u8] =
+    include_bytes!("../../target/wasm32v1-none/release/strategy_registry.wasm");
+
+#[soroban_sdk::contracttype]
+#[derive(Clone)]
+pub struct Ceilings {
+    pub max_perf_fee_bps: u32,
+    pub max_slippage_bps: u32,
+    pub max_oracle_band_bps: u32,
+    pub max_loss_bps_per_window: u32,
+    pub min_cooldown_secs: u64,
+    pub min_platform_split_bps: u32,
+}
+
+/// Fixture with the REAL registry wasm wired as the strategy's registry —
+/// `set_policy` calls `registry.validate_policy`, so ceiling enforcement
+/// only exists when the callee is the real contract.
+fn setup_with_real_registry() -> (Fixture, Address) {
+    let f = setup();
+    let e = &f.e;
+    let admin = Address::generate(e);
+    let platform = Address::generate(e);
+    let registry = e.register(REGISTRY_WASM, (admin, f.treasury.clone(), platform));
+    e.invoke_contract::<()>(
+        &registry,
+        &Symbol::new(e, "set_ceilings"),
+        vec![
+            e,
+            Ceilings {
+                max_perf_fee_bps: 3000,
+                max_slippage_bps: 1000,
+                max_oracle_band_bps: 1000,
+                max_loss_bps_per_window: 5000,
+                min_cooldown_secs: 0,
+                min_platform_split_bps: 2000,
+            }
+            .into_val(e),
+        ],
+    );
+    for v in [&f.pool, &f.reward_pool, &f.oracle] {
+        e.invoke_contract::<()>(
+            &registry,
+            &Symbol::new(e, "add_venue"),
+            vec![e, v.clone().into_val(e)],
+        );
+    }
+    // re-point the strategy's registry slot at the real contract and re-bind
+    let policy = make_policy(&e, vec![&e, f.pool.clone(), f.reward_pool.clone()]);
+    let init_args: Vec<soroban_sdk::Val> = vec![
+        e,
+        f.pool.clone().into_val(e),
+        f.oracle.clone().into_val(e),
+        registry.clone().into_val(e),
+        f.treasury.clone().into_val(e),
+        policy.into_val(e),
+        f.aqua.clone().into_val(e),
+        f.reward_pool.clone().into_val(e),
+    ];
+    let strat_addr = e.register(ClAquarius, (f.usdc.clone(), init_args));
+    let strategy = ClAquariusClient::new(&e, &strat_addr);
+    strategy.bind(&registry, &f.vault);
+    (Fixture { strategy, ..f }, registry)
+}
+
+#[test]
+fn set_policy_within_ceiling_applies() {
+    let (f, _registry) = setup_with_real_registry();
+    let mut p = make_policy(&f.e, vec![&f.e, f.pool.clone(), f.reward_pool.clone()]);
+    p.perf_fee_bps = 2500; // ≤ 3000 ceiling
+    p.max_slippage_bps = 500; // ≤ 1000
+    p.platform_split_bps = 4000; // ≥ 2000
+    f.strategy.set_policy(&f.keeper, &p);
+}
+
+#[test]
+fn set_policy_over_ceiling_reverts() {
+    let (f, _registry) = setup_with_real_registry();
+    let mut p = make_policy(&f.e, vec![&f.e, f.pool.clone(), f.reward_pool.clone()]);
+    p.perf_fee_bps = 4000; // > 3000 ceiling
+    assert!(f.strategy.try_set_policy(&f.keeper, &p).is_err());
+}
+
+#[test]
+fn set_policy_unlisted_venue_reverts() {
+    let (f, _registry) = setup_with_real_registry();
+    let rogue = Address::generate(&f.e);
+    let mut p = make_policy(&f.e, vec![&f.e, f.pool.clone(), f.reward_pool.clone()]);
+    p.swap_allowed.push_back(rogue);
+    assert!(f.strategy.try_set_policy(&f.keeper, &p).is_err());
+}
+
+#[test]
+fn set_policy_rejects_non_keeper() {
+    let (f, _registry) = setup_with_real_registry();
+    let p = make_policy(&f.e, vec![&f.e, f.pool.clone(), f.reward_pool.clone()]);
+    let rando = Address::generate(&f.e);
+    assert!(f.strategy.try_set_policy(&rando, &p).is_err());
 }

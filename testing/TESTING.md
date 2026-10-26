@@ -130,14 +130,23 @@ pool/oracle fixtures:
   oracle-derived bound, tick range outside
   `range_min_bps`/`range_max_bps`, `|new_tick − ref_tick| > tick_cap_bps`,
   > `MAX_SWAP_STEPS` hops. (Expired plans and the cooldown are covered.)
-- **Loss budget** — consecutive-loss accumulation within the window and
-  window reset.
-- **Atomic revert** — mid-harvest failure (e.g. swap step reverting)
-  leaves the whole call reverted, position restored.
-- **`set_policy`** — registry ceiling enforcement on operator policy
-  changes.
-- **Two-asset vault config** — in-kind rescue path (`rescue` delivering
-  both pool tokens).
+- ~~**Loss budget**~~ — DONE: accumulation + cap revert +
+  window reset (`loss_budget_*` tests). Surfaced two real bugs:
+  `deposit` never seeded `LastBalance` (first harvest recorded no
+  loss) and `withdraw` didn't refresh it (vault-side withdrawals would
+  have been booked as keeper loss). Both fixed.
+- ~~**Atomic revert**~~ — DONE: `mid_harvest_failure_reverts_atomically`
+  (overdrawn second swap leg → whole harvest rolls back, position and
+  balances untouched).
+- ~~**`set_policy`**~~ — DONE: real `strategy_registry.wasm` fixture;
+  within-ceiling applies, over-ceiling / unlisted venue / non-keeper
+  all revert (`set_policy_*` tests).
+- ~~**Two-asset vault config**~~ — DONE: `rescue(caller)` added —
+  EM/Manager-auth in-kind push of both legs to the vault
+  (`rescue_*` tests). Platform passthrough still unwired.
+- ~~**Reward-oracle failure isolation**~~ — DONE: stale/missing reward
+  feed now skips the claim instead of reverting harvest
+  (`stale_reward_oracle_skips_claim`).
 
 ## Known caveats / deliberately out of scope
 

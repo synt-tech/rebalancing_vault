@@ -578,6 +578,18 @@
                       "key": {
                         "vec": [
                           {
+                            "symbol": "LastBalance"
+                          }
+                        ]
+                      },
+                      "val": {
+                        "i128": "6000000000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "vec": [
+                          {
                             "symbol": "Oracle"
                           }
                         ]

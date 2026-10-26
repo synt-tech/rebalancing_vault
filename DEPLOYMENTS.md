@@ -15,7 +15,13 @@ swap into a real testnet CL pool is a later step.
 | ~~platform wrapper (v1)~~ superseded | `CB74CKXGUTTFP5P3ZEOX3VDR376YJKNLFQ6RKPX6QTEITHNG62D5F6RV` | `8a83f606…` |
 | null_router | `CDEYX7WBCCSYXOFBMBOCB2WTLLROPQAWS5YQKUTYSDNBPD23EGASH5LQ` | `c0a49523…` |
 | patched vault template | — | `c749c49c…` (installed, deployed per-vault by factory) |
-| cl_aquarius template | — | `ea0f490b…` (installed; `21e4cbfd…`/`b0b3b794…` superseded) |
+| cl_aquarius template | — | `522457f9…` (installed + registered; `ea0f490b…` superseded) |
+
+> **Next strategy build pending deploy**: source changes since `522457f9`
+> (reward-feed failure isolation, `LastBalance` seeding on deposit/
+> withdraw, new `rescue` export) build `57720813c68dc4b3…`. A v5 vault
+> deployment is needed to ship them — template must be installed +
+> registered, then a fresh `platform.create_vault` binds it.
 
 > **Strategy redeployed under SDK 29.0.1** (2026-10-26): template
 > `522457f9…2584` installed + registered in the registry alongside

@@ -230,7 +230,10 @@ pub struct MockOracle;
 #[contractimpl]
 impl MockOracle {
     pub fn set_price(e: Env, asset: Address, price: i128) {
-        e.storage().persistent().set(&Key::Price(asset), &price);
+        e.storage().persistent().set(&Key::Price(asset), &(price, e.ledger().timestamp()));
+    }
+    pub fn set_price_ts(e: Env, asset: Address, price: i128, ts: u64) {
+        e.storage().persistent().set(&Key::Price(asset), &(price, ts));
     }
     /// SEP-40 lastprice — enum arg must match OracleAsset's XDR shape.
     pub fn lastprice(e: Env, asset: OracleAsset) -> Option<PriceData> {
@@ -238,11 +241,8 @@ impl MockOracle {
             OracleAsset::Stellar(a) => a,
             OracleAsset::Other(_) => return None,
         };
-        let p: i128 = e.storage().persistent().get(&Key::Price(a))?;
-        Some(PriceData {
-            price: p,
-            timestamp: e.ledger().timestamp(),
-        })
+        let (p, ts): (i128, u64) = e.storage().persistent().get(&Key::Price(a))?;
+        Some(PriceData { price: p, timestamp: ts })
     }
     pub fn decimals(_e: Env) -> u32 {
         14

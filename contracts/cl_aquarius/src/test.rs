@@ -294,3 +294,45 @@ fn vault_integration_deposit_invest_withdraw() {
     assert!(out.get(0).unwrap() <= 10_000_000_000);
     assert_eq!(bal(&e, &usdc, &user), out.get(0).unwrap());
 }
+
+#[test]
+fn rewards_converted_and_fee_skimmed_at_harvest() {
+    let f = setup();
+    mint(&f.e, &f.usdc, &f.vault, 10_000_000_000);
+    f.strategy.deposit(&10_000_000_000, &f.vault);
+    // position first so harvest isn't a no-op
+    let plan = SwapPlan { steps: Vec::new(&f.e), expiry: 1_800_000_000,
+        new_range: RangeSpec{tick_lower:-100, tick_upper:100} };
+    f.strategy.harvest(&f.keeper, &Some(plan.to_xdr(&f.e)));
+
+    // pending reward 2e9 AQUA; reward pool funded with XLM to pay the swap
+    f.e.invoke_contract::<()>(&f.pool, &Symbol::new(&f.e, "set_user_reward"),
+        vec![&f.e, f.strategy.address.clone().into_val(&f.e), 2_000_000_000u128.into_val(&f.e)]);
+    mint(&f.e, &f.aqua, &f.strategy.address, 2_000_000_000); // claim pays from strategy-held AQUA? mock claims w/o paying — provide pool AQUA too
+    mint(&f.e, &f.xlm, &f.reward_pool, 100_000_000_000);
+    let plan2 = SwapPlan { steps: Vec::new(&f.e), expiry: 1_800_000_000,
+        new_range: RangeSpec{tick_lower:0, tick_upper:0} }; // keep position
+    f.strategy.harvest(&f.keeper, &Some(plan2.to_xdr(&f.e)));
+    // claimed 2e9 AQUA → swapped to XLM at oracle price (p_aqua/p_xlm=0.5),
+    // mock pays out_min = fair_out×(1-slippage) = 2e9×0.5×0.97 = 970e6 XLM;
+    // 15% fee → 145.5e6 XLM total, 50/50 → 72.75e6 each
+    let p = f.strategy.try_claim_fees(&f.treasury, &0u32, &f.xlm).unwrap().unwrap();
+    assert!(p > 0, "platform reward fee must accrue");
+}
+
+#[test]
+fn stale_oracle_blocks_withdraw() {
+    let f = setup();
+    mint(&f.e, &f.usdc, &f.vault, 10_000_000_000);
+    f.strategy.deposit(&10_000_000_000, &f.vault);
+    // jump ledger forward past max_oracle_age (600s)
+    f.e.ledger().set_timestamp(1_700_000_000 + 700);
+    assert!(f.strategy.try_withdraw(&1_000_000_000, &f.vault, &f.vault).is_err());
+}
+
+#[test]
+fn claim_fees_rejects_wrong_caller() {
+    let f = setup();
+    let rando = Address::generate(&f.e);
+    assert!(f.strategy.try_claim_fees(&rando, &0u32, &f.usdc).is_err());
+}

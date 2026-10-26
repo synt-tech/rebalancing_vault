@@ -5,12 +5,12 @@ use crate::storage::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     token::{StellarAssetClient, TokenClient},
-    vec, xdr::ToXdr, Address, BytesN, Env, IntoVal, Symbol, Vec,
+    vec, xdr::ToXdr, Address, Env, IntoVal, Symbol, Vec,
 };
 
 const MOCK_WASM: &[u8] = include_bytes!("../../target/wasm32v1-none/release/test_mocks.wasm");
 
-fn make_policy(e: &Env, venues: Vec<Address>) -> Policy {
+fn make_policy(_e: &Env, venues: Vec<Address>) -> Policy {
     Policy {
         swap_allowed: venues,
         oracle_band_bps: 500,
@@ -35,10 +35,10 @@ struct Fixture {
     vault: Address,
     usdc: Address,
     xlm: Address,
-    aqua: Address,
-    pool: Address,
-    reward_pool: Address,
-    oracle: Address,
+    #[allow(dead_code)] aqua: Address,
+    #[allow(dead_code)] pool: Address,
+    #[allow(dead_code)] reward_pool: Address,
+    #[allow(dead_code)] oracle: Address,
     treasury: Address,
     operator: Address,
     keeper: Address,
@@ -56,7 +56,6 @@ fn setup() -> Fixture {
     let usdc = e.register_stellar_asset_contract_v2(Address::generate(&e));
     let aqua = e.register_stellar_asset_contract_v2(Address::generate(&e));
     let (xlm, usdc, aqua) = (xlm.address(), usdc.address(), aqua.address());
-    let emergency = Address::generate(&e);
 
     let sqrtp: u128 = 125_260_000_000_000_000_000_000_000_000; // 1.2526e29 ≈ √2.5·2^96
     let pool = e.register(MOCK_WASM, (xlm.clone(), usdc.clone(), sqrtp));
@@ -67,6 +66,7 @@ fn setup() -> Fixture {
 
     let manager = Address::generate(&e);
     let keeper = Address::generate(&e);
+    let emergency = Address::generate(&e);
     let operator = Address::generate(&e);
     let treasury = Address::generate(&e);
 
@@ -174,4 +174,123 @@ fn emergency_exit_unwinds_without_swap() {
     f.strategy.emergency_exit(&f.emergency);
     // position gone — balance still ~10e9 as idle USDC
     assert_eq!(f.strategy.balance(&f.vault), 10_000_000_000);
+}
+
+// ==================== Integration: real patched vault WASM ====================
+
+const VAULT_WASM: &[u8] = include_bytes!("../../../../defindex/apps/contracts/target/wasm32v1-none/release/defindex_vault.optimized.wasm");
+
+#[soroban_sdk::contracttype]
+#[derive(Clone)]
+pub struct VaultStrategy {
+    pub address: Address,
+    pub name: soroban_sdk::String,
+    pub paused: bool,
+}
+
+#[soroban_sdk::contracttype]
+#[derive(Clone)]
+pub struct VaultAssetSet {
+    pub address: Address,
+    pub strategies: Vec<VaultStrategy>,
+}
+
+#[soroban_sdk::contracttype]
+#[derive(Clone)]
+pub enum VaultInstr {
+    Unwind(Address, i128),
+    Invest(Address, i128),
+}
+
+/// Round-trip through the real patched vault: user deposit → keeper
+/// Invest → strategy pull → user withdraw (idle=0 → exercises the P2
+/// unwind path end-to-end).
+#[test]
+fn vault_integration_deposit_invest_withdraw() {
+    let e = Env::default();
+    e.mock_all_auths_allowing_non_root_auth();
+    e.ledger().set_timestamp(1_700_000_000);
+
+    let usdc_ct = e.register_stellar_asset_contract_v2(Address::generate(&e));
+    let xlm_ct = e.register_stellar_asset_contract_v2(Address::generate(&e));
+    let aqua_ct = e.register_stellar_asset_contract_v2(Address::generate(&e));
+    let (usdc, xlm, aqua) = (usdc_ct.address(), xlm_ct.address(), aqua_ct.address());
+
+    let manager = Address::generate(&e);
+    let keeper = Address::generate(&e);
+    let emergency = Address::generate(&e);
+    let operator = Address::generate(&e);
+    let treasury = Address::generate(&e);
+    let registry = Address::generate(&e);
+    let user = Address::generate(&e);
+
+    let sqrtp: u128 = 125_260_000_000_000_000_000_000_000_000;
+    let pool = e.register(MOCK_WASM, (xlm.clone(), usdc.clone(), sqrtp));
+    let reward_pool = e.register(MOCK_WASM, (xlm.clone(), aqua.clone(), 1u128));
+    let oracle = e.register(MOCK_WASM, (xlm.clone(), usdc.clone(), 1u128));
+    let null_router = e.register(MOCK_WASM, (xlm.clone(), usdc.clone(), 1u128));
+    for (tok, p) in [(usdc.clone(), 100_000_000_000_000i128), (xlm.clone(), 40_000_000_000_000i128), (aqua.clone(), 20_000_000_000_000i128)] {
+        e.invoke_contract::<()>(&oracle, &Symbol::new(&e, "set_price"), vec![&e, tok.into_val(&e), p.into_val(&e)]);
+    }
+
+    // strategy (unbound — vault doesn't exist yet)
+    let venues: Vec<Address> = vec![&e, pool.clone(), reward_pool.clone()];
+    let policy = make_policy(&e, venues);
+    let init_args: Vec<soroban_sdk::Val> = vec![&e,
+        pool.clone().into_val(&e), oracle.clone().into_val(&e), registry.clone().into_val(&e),
+        treasury.clone().into_val(&e), policy.into_val(&e), aqua.clone().into_val(&e), reward_pool.clone().into_val(&e)];
+    let strat_addr = e.register(ClAquarius, (usdc.clone(), init_args));
+    let strategy = ClAquariusClient::new(&e, &strat_addr);
+
+    // patched vault: assets=[USDC → [strategy]], roles, fee=0, non-upgradable
+    let vault_addr = {
+        let mut assets: Vec<VaultAssetSet> = Vec::new(&e);
+        let mut strats: Vec<VaultStrategy> = Vec::new(&e);
+        strats.push_back(VaultStrategy {
+            address: strat_addr.clone(),
+            name: soroban_sdk::String::from_str(&e, "cl_aquarius"),
+            paused: false,
+        });
+        assets.push_back(VaultAssetSet { address: usdc.clone(), strategies: strats });
+        let mut roles: soroban_sdk::Map<u32, Address> = soroban_sdk::Map::new(&e);
+        roles.set(0u32, emergency.clone());
+        roles.set(1u32, operator.clone());
+        roles.set(2u32, manager.clone());
+        roles.set(3u32, keeper.clone());
+        let mut name_sym: soroban_sdk::Map<soroban_sdk::String, soroban_sdk::String> = soroban_sdk::Map::new(&e);
+        name_sym.set(soroban_sdk::String::from_str(&e, "name"), soroban_sdk::String::from_str(&e, "CLVault"));
+        name_sym.set(soroban_sdk::String::from_str(&e, "symbol"), soroban_sdk::String::from_str(&e, "CLV"));
+        e.register(VAULT_WASM, (assets, roles, 0u32, treasury.clone(), 2000u32, null_router, name_sym, false))
+    };
+
+    // bind strategy↔vault via the registry address the strategy was init'd with
+    strategy.bind(&registry, &vault_addr);
+
+    // user deposit 10e9 USDC → shares, leave idle (invest=false)
+    StellarAssetClient::new(&e, &usdc).mint(&user, &10_000_000_000);
+    let (got_amts, shares, _) = e.invoke_contract::<(Vec<i128>, i128, Option<Vec<soroban_sdk::Val>>)>(
+        &vault_addr,
+        &Symbol::new(&e, "deposit"),
+        vec![&e, Vec::<i128>::from_array(&e, [10_000_000_000i128]).into_val(&e),
+             Vec::<i128>::from_array(&e, [0i128]).into_val(&e),
+             user.clone().into_val(&e), false.into_val(&e)],
+    );
+    assert_eq!(got_amts.get(0).unwrap(), 10_000_000_000);
+    assert!(shares > 0);
+
+    // keeper invests everything into the strategy
+    e.invoke_contract::<()>(&vault_addr, &Symbol::new(&e, "rebalance"),
+        vec![&e, keeper.clone().into_val(&e),
+             Vec::<VaultInstr>::from_array(&e, [VaultInstr::Invest(strat_addr.clone(), 10_000_000_000i128)]).into_val(&e)]);
+    assert_eq!(bal(&e, &usdc, &strat_addr), 10_000_000_000);
+
+    // user withdraws all shares → idle=0 forces the strategy unwind path
+    let df_bal: i128 = e.invoke_contract(&vault_addr, &Symbol::new(&e, "balance"),
+        vec![&e, user.clone().into_val(&e)]);
+    assert!(df_bal > 0 && df_bal <= shares, "df balance mismatch: shares={}", shares);
+    let out: Vec<i128> = e.invoke_contract(&vault_addr, &Symbol::new(&e, "withdraw"),
+        vec![&e, df_bal.into_val(&e), Vec::<i128>::from_array(&e, [1i128]).into_val(&e), user.clone().into_val(&e)]);
+    assert!(out.get(0).unwrap() > 0);
+    assert!(out.get(0).unwrap() <= 10_000_000_000);
+    assert_eq!(bal(&e, &usdc, &user), out.get(0).unwrap());
 }

@@ -61,6 +61,7 @@ pub struct RangeSpec {
 pub struct SwapPlan {
     pub steps: Vec<SwapStep>,
     pub expiry: u64,
+    pub ref_tick: i32,
     /// `tick_lower >= tick_upper` means "no redeploy".
     pub new_range: RangeSpec,
 }

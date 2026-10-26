@@ -20,6 +20,7 @@ pub enum RegError {
     PolicyExceedsCeiling = 5,
     AlreadyBound = 6,
     UnknownStrategy = 7,
+    InvalidInitArgs = 8,
 }
 
 /// Mirrors cl_aquarius::Policy — registry must parse it to enforce ceilings.
@@ -51,6 +52,7 @@ pub struct Ceilings {
     pub max_oracle_band_bps: u32,
     pub max_loss_bps_per_window: u32,
     pub min_cooldown_secs: u64,
+    pub min_platform_split_bps: u32,
 }
 
 #[contracttype]
@@ -98,7 +100,11 @@ impl StrategyRegistry {
 
     pub fn register_template(e: Env, template_hash: BytesN<32>, family: Symbol) {
         require_admin(&e);
-        e.storage().instance().set(&DataKey::Template(template_hash), &family);
+        e.storage().instance().set(&DataKey::Template(template_hash.clone()), &family);
+        e.events().publish(
+            (Symbol::new(&e, "TemplateRegistered"),),
+            (template_hash, family),
+        );
     }
 
     pub fn remove_template(e: Env, template_hash: BytesN<32>) {
@@ -110,8 +116,9 @@ impl StrategyRegistry {
         require_admin(&e);
         let mut v: Vec<Address> = e.storage().instance().get(&DataKey::Venues).unwrap_or(Vec::new(&e));
         if !v.contains(&venue) {
-            v.push_back(venue);
+            v.push_back(venue.clone());
             e.storage().instance().set(&DataKey::Venues, &v);
+            e.events().publish((Symbol::new(&e, "VenueRegistered"),), (venue,));
         }
     }
 
@@ -168,39 +175,76 @@ impl StrategyRegistry {
     /// provenance (the operator). Returns the instance address.
     /// `init_args` must match the template's __constructor layout
     /// (cl_aquarius: [pool, oracle, registry, treasury, policy, reward_token, reward_pool]).
+    /// The registry pins `init_args[2]` (registry) and `init_args[3]`
+    /// (treasury) to its own values so the operator cannot redirect fees.
     pub fn deploy_strategy(
         e: Env,
         deployer: Address,
         template_hash: BytesN<32>,
         salt: BytesN<32>,
+        asset: Address,
         init_args: Vec<Val>,
     ) -> Address {
+        deployer.require_auth();
+
         let family: Symbol = e
             .storage()
             .instance()
             .get(&DataKey::Template(template_hash.clone()))
             .unwrap_or_else(|| panic_with_error!(&e, RegError::TemplateNotRegistered));
 
-        // Policy is init_args[4] for cl_aquarius-family templates.
-        if let Some(v) = init_args.get(4) {
-            if let Ok(policy) = Policy::try_from_val(&e, &v) {
-                check_policy(&e, &policy);
+        if init_args.len() < 7 {
+            panic_with_error!(&e, RegError::InvalidInitArgs);
+        }
+
+        let treasury: Address = e.storage().instance().get(&DataKey::Treasury).unwrap();
+        let mut new_init_args: Vec<Val> = Vec::new(&e);
+        for i in 0..init_args.len() {
+            if i == 2 {
+                new_init_args.push_back(e.current_contract_address().into_val(&e));
+            } else if i == 3 {
+                new_init_args.push_back(treasury.clone().into_val(&e));
+            } else {
+                new_init_args.push_back(init_args.get(i).unwrap());
             }
         }
+
+        let venues: Vec<Address> = e.storage().instance().get(&DataKey::Venues).unwrap_or(Vec::new(&e));
+        for idx in [0u32, 1u32, 6u32] {
+            let v = new_init_args.get(idx).unwrap_or_else(|| panic_with_error!(&e, RegError::InvalidInitArgs));
+            let a = Address::try_from_val(&e, &v).unwrap_or_else(|_| panic_with_error!(&e, RegError::InvalidInitArgs));
+            if !venues.contains(&a) {
+                panic_with_error!(&e, RegError::VenueNotAllowed);
+            }
+        }
+
+        // Policy is init_args[4] for cl_aquarius-family templates.
+        let policy_val = new_init_args.get(4).unwrap_or_else(|| panic_with_error!(&e, RegError::InvalidInitArgs));
+        let policy = Policy::try_from_val(&e, &policy_val).unwrap_or_else(|_| panic_with_error!(&e, RegError::InvalidInitArgs));
+        check_policy(&e, &policy);
+
+        // The strategy constructor is __constructor(asset, init_args).
+        let mut deploy_args: Vec<Val> = Vec::new(&e);
+        deploy_args.push_back(asset.into_val(&e));
+        deploy_args.push_back(new_init_args.into_val(&e));
 
         let addr = e
             .deployer()
             .with_current_contract(salt)
-            .deploy_v2(template_hash.clone(), init_args);
+            .deploy_v2(template_hash.clone(), deploy_args);
 
         e.storage().instance().set(
             &DataKey::Deployed(addr.clone()),
             &StrategyInfo {
-                template_hash,
-                family,
-                deployer,
+                template_hash: template_hash.clone(),
+                family: family.clone(),
+                deployer: deployer.clone(),
                 bound_vault: None,
             },
+        );
+        e.events().publish(
+            (Symbol::new(&e, "StrategyDeployed"),),
+            (addr.clone(), template_hash, deployer),
         );
         addr
     }
@@ -229,8 +273,17 @@ impl StrategyRegistry {
                 vault.clone().into_val(&e),
             ]),
         );
-        info.bound_vault = Some(vault);
-        e.storage().instance().set(&DataKey::Deployed(strategy), &info);
+        info.bound_vault = Some(vault.clone());
+        e.storage().instance().set(&DataKey::Deployed(strategy.clone()), &info);
+        e.events().publish(
+            (Symbol::new(&e, "StrategyBound"),),
+            (strategy, vault),
+        );
+    }
+
+    /// Public policy check used by strategies on `set_policy`.
+    pub fn validate_policy(e: Env, policy: Policy) {
+        check_policy(&e, &policy);
     }
 }
 
@@ -241,6 +294,7 @@ fn check_policy(e: &Env, p: &Policy) {
             || p.oracle_band_bps > c.max_oracle_band_bps
             || p.max_loss_bps_per_window > c.max_loss_bps_per_window
             || p.cooldown_secs < c.min_cooldown_secs
+            || p.platform_split_bps < c.min_platform_split_bps
         {
             panic_with_error!(e, RegError::PolicyExceedsCeiling);
         }

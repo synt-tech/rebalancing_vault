@@ -3,9 +3,10 @@
 use crate::clients::*;
 use crate::storage::*;
 use defindex_strategy_core::StrategyError;
-use soroban_sdk::{token::TokenClient, Address, Env, U256};
+use soroban_sdk::{token::TokenClient, Address, Env, Symbol, U256};
 
 const BPS: i128 = 10_000;
+const MAX_SWAP_STEPS: u32 = 5;
 /// Reflector DEX feed: base USDC, 14 decimals.
 pub const ORACLE_SCALE: i128 = 100_000_000_000_000; // 1e14
 const TWO_POW_96: u128 = 0x1_0000_0000_0000_0000_0000_0000;
@@ -133,7 +134,7 @@ pub fn compute_balance(
 /// Accrue a performance fee on `income` (in `token`) into `fees_owed`.
 /// Rounding: fee rounds down in depositors' favour; platform share floors,
 /// operator takes the remainder so legs sum exactly.
-pub fn skim(e: &Env, token: &Address, income: u128, p: &Policy) -> Result<(), StrategyError> {
+pub fn skim(e: &Env, token: &Address, income: u128, source: Symbol, p: &Policy) -> Result<(), StrategyError> {
     if income == 0 || p.perf_fee_bps == 0 {
         return Ok(());
     }
@@ -145,6 +146,10 @@ pub fn skim(e: &Env, token: &Address, income: u128, p: &Policy) -> Result<(), St
     let operator = fee - platform;
     add_owed(e, Role::Platform, token, platform);
     add_owed(e, Role::Operator, token, operator);
+    e.events().publish(
+        (Symbol::new(e, "FeeAccrued"),),
+        (source, token.clone(), income, platform, operator),
+    );
     Ok(())
 }
 
@@ -162,14 +167,37 @@ pub fn owed(e: &Env, role: Role, token: &Address) -> i128 {
 }
 
 /// Validate a keeper-supplied plan against Policy. Executes nothing.
+/// Every swap leg's `out_min` is re-derived from the oracle, never trusted
+/// from the keeper, and the new range centre must stay inside `tick_cap_bps`
+/// of the keeper-provided `ref_tick`.
 pub fn validate_plan(e: &Env, plan: &SwapPlan, p: &Policy, spacing: i32) -> Result<(), StrategyError> {
     if plan.expiry < e.ledger().timestamp() {
         return Err(StrategyError::DeadlineExpired);
     }
+    if plan.steps.len() > MAX_SWAP_STEPS {
+        return Err(StrategyError::InvalidArgument);
+    }
+    let oracle: Address = get(e, &DataKey::Oracle);
     for i in 0..plan.steps.len() {
         let s = plan.steps.get(i).unwrap();
         if !p.swap_allowed.contains(&s.pool) {
             return Err(StrategyError::NotAuthorized);
+        }
+        let pool = ClPoolClient::new(e, &s.pool);
+        let tokens = pool.get_tokens();
+        let in_tok = tokens.get(s.in_idx).ok_or(StrategyError::InvalidArgument)?;
+        let out_tok = tokens.get(s.out_idx).ok_or(StrategyError::InvalidArgument)?;
+        let p_in = oracle_price(e, &oracle, &in_tok, p)?;
+        let p_out = oracle_price(e, &oracle, &out_tok, p)?;
+        if p_in <= 0 || p_out <= 0 {
+            return Err(StrategyError::DivisionByZero);
+        }
+        let in_amt = i128::try_from(s.in_amount).map_err(|_| StrategyError::InvalidArgument)?;
+        let out_min = i128::try_from(s.out_min).map_err(|_| StrategyError::InvalidArgument)?;
+        let fair_out = in_amt * p_in / p_out;
+        let min_out = fair_out * (BPS - p.max_slippage_bps as i128) / BPS;
+        if out_min < min_out {
+            return Err(StrategyError::InvalidArgument);
         }
     }
     let (tl, tu) = (plan.new_range.tick_lower, plan.new_range.tick_upper);
@@ -181,6 +209,10 @@ pub fn validate_plan(e: &Env, plan: &SwapPlan, p: &Policy, spacing: i32) -> Resu
         // (tick ≈ ln(1.0001) steps, so |Δtick| ≈ price deviation in bps).
         let half = ((tu - tl) / 2) as u32;
         if half < p.range_min_bps || half > p.range_max_bps {
+            return Err(StrategyError::InvalidArgument);
+        }
+        let center = (tl + tu) / 2;
+        if (center - plan.ref_tick).abs() > p.tick_cap_bps as i32 {
             return Err(StrategyError::InvalidArgument);
         }
     }

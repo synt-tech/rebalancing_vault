@@ -3,6 +3,7 @@
 //! XLM/USDC concentrated pool (CBBMQB…BUCV), 2026-10-25 — the deployed
 //! interface is a superset of the local soroban-amm copy.
 #![allow(dead_code)]
+use crate::storage::Policy;
 use soroban_sdk::{contractclient, contracttype, Address, Env, Symbol, Vec, U256};
 
 // ---- Aquarius concentrated pool ----
@@ -74,4 +75,12 @@ pub trait Vault {
     fn get_manager(env: Env) -> Address;
     fn get_emergency_manager(env: Env) -> Address;
     fn get_fee_receiver(env: Env) -> Address;
+}
+
+// ---- strategy registry (policy ceilings + platform treasury) ----
+
+#[contractclient(name = "RegistryClient")]
+pub trait Registry {
+    fn validate_policy(env: Env, policy: Policy);
+    fn treasury(env: Env) -> Address;
 }

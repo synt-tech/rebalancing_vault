@@ -38,6 +38,7 @@ pub enum Key {
     UserReward(Address),    // -> u128
     Price(Address),         // -> i128 (1e14 scale)
     Role(u32),              // -> Address
+    Treasury,               // -> Address (platform fee recipient)
     EmergencyMode,
 }
 
@@ -261,6 +262,12 @@ impl MockVault {
         e.storage().instance().set(&Key::Role(1), &fee_recv);
         e.storage().instance().set(&Key::Role(2), &manager);
         e.storage().instance().set(&Key::Role(3), &rebalance);
+    }
+    pub fn set_treasury(e: Env, treasury: Address) {
+        e.storage().instance().set(&Key::Treasury, &treasury);
+    }
+    pub fn treasury(e: Env) -> Address {
+        e.storage().instance().get(&Key::Treasury).unwrap_or(e.current_contract_address())
     }
     pub fn get_emergency_manager(e: Env) -> Address {
         e.storage().instance().get(&Key::Role(0)).unwrap()

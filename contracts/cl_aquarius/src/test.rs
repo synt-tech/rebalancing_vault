@@ -1,7 +1,8 @@
 //! Strategy unit tests with mock pool/oracle/vault (mocks crate WASM).
 #![cfg(test)]
+extern crate std;
+use std::println;
 use super::*;
-use crate::storage::*;
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     token::{StellarAssetClient, TokenClient},
@@ -49,6 +50,7 @@ struct Fixture {
 /// implied ratio = p_usdc/p_xlm = 1e14/4e13 = 2.5e14 → sqrtP = √2.5·2^96.
 fn setup() -> Fixture {
     let e = Env::default();
+    e.cost_estimate().budget().reset_unlimited();
     e.mock_all_auths_allowing_non_root_auth();
     e.ledger().set_timestamp(1_700_000_000);
 
@@ -73,6 +75,9 @@ fn setup() -> Fixture {
     // init vault mock (its `init` is a plain fn, not __constructor)
     e.invoke_contract::<()>(&vault, &Symbol::new(&e, "init"), {
         vec![&e, manager.into_val(&e), keeper.into_val(&e), emergency.into_val(&e), operator.into_val(&e)]
+    });
+    e.invoke_contract::<()>(&vault, &Symbol::new(&e, "set_treasury"), {
+        vec![&e, treasury.into_val(&e)]
     });
     // oracle prices (1e14): usdc=1.0, xlm=0.4, aqua=0.2
     for (tok, p) in [(usdc.clone(), 100_000_000_000_000i128), (xlm.clone(), 40_000_000_000_000i128), (aqua.clone(), 20_000_000_000_000i128)] {
@@ -127,7 +132,7 @@ fn lp_fees_accrue_and_are_claimable() {
     mint(&f.e, &f.usdc, &f.vault, 10_000_000_000);
     f.strategy.deposit(&10_000_000_000, &f.vault);
     // create a position via harvest plan
-    let plan = SwapPlan { steps: Vec::new(&f.e), expiry: 1_800_000_000, new_range: RangeSpec{tick_lower:-100, tick_upper:100} };
+    let plan = SwapPlan { steps: Vec::new(&f.e), ref_tick: 0, expiry: 1_800_000_000, new_range: RangeSpec{tick_lower:-100, tick_upper:100} };
     f.strategy.harvest(&f.keeper, &Some(plan.to_xdr(&f.e)));
     // position created holding 10e9 USDC
     // set claimable fees in token order [t0,t1]: 2e9 XLM + 1e9 USDC
@@ -148,7 +153,7 @@ fn lp_fees_accrue_and_are_claimable() {
 #[test]
 fn harvest_rejects_non_keeper() {
     let f = setup();
-    let plan = SwapPlan { steps: Vec::new(&f.e), expiry: 1_800_000_000, new_range: RangeSpec{tick_lower:-100, tick_upper:100} };
+    let plan = SwapPlan { steps: Vec::new(&f.e), ref_tick: 0, expiry: 1_800_000_000, new_range: RangeSpec{tick_lower:-100, tick_upper:100} };
     let r = f.strategy.try_harvest(&Address::generate(&f.e), &Some(plan.to_xdr(&f.e)));
     assert!(r.is_err());
 }
@@ -159,7 +164,7 @@ fn oracle_band_revert_blocks_harvest() {
     // push spot way outside band: sqrtP for ratio ~100e14
     f.e.invoke_contract::<()>(&f.pool, &Symbol::new(&f.e, "set_spot"),
         vec![&f.e, 7_923_000_000_000_000_000_000_000_000_00u128.into_val(&f.e), 0i32.into_val(&f.e)]);
-    let plan = SwapPlan { steps: Vec::new(&f.e), expiry: 1_800_000_000, new_range: RangeSpec{tick_lower:-100, tick_upper:100} };
+    let plan = SwapPlan { steps: Vec::new(&f.e), ref_tick: 0, expiry: 1_800_000_000, new_range: RangeSpec{tick_lower:-100, tick_upper:100} };
     assert!(f.strategy.try_harvest(&f.keeper, &Some(plan.to_xdr(&f.e))).is_err());
 }
 
@@ -168,7 +173,7 @@ fn emergency_exit_unwinds_without_swap() {
     let f = setup();
     mint(&f.e, &f.usdc, &f.vault, 10_000_000_000);
     f.strategy.deposit(&10_000_000_000, &f.vault);
-    let plan = SwapPlan { steps: Vec::new(&f.e), expiry: 1_800_000_000, new_range: RangeSpec{tick_lower:-100, tick_upper:100} };
+    let plan = SwapPlan { steps: Vec::new(&f.e), ref_tick: 0, expiry: 1_800_000_000, new_range: RangeSpec{tick_lower:-100, tick_upper:100} };
     f.strategy.harvest(&f.keeper, &Some(plan.to_xdr(&f.e)));
     // emergency manager exits — position closed, funds idle in strategy
     f.strategy.emergency_exit(&f.emergency);
@@ -208,6 +213,7 @@ pub enum VaultInstr {
 #[test]
 fn vault_integration_deposit_invest_withdraw() {
     let e = Env::default();
+    e.cost_estimate().budget().reset_unlimited();
     e.mock_all_auths_allowing_non_root_auth();
     e.ledger().set_timestamp(1_700_000_000);
 
@@ -301,7 +307,7 @@ fn rewards_converted_and_fee_skimmed_at_harvest() {
     mint(&f.e, &f.usdc, &f.vault, 10_000_000_000);
     f.strategy.deposit(&10_000_000_000, &f.vault);
     // position first so harvest isn't a no-op
-    let plan = SwapPlan { steps: Vec::new(&f.e), expiry: 1_800_000_000,
+    let plan = SwapPlan { steps: Vec::new(&f.e), ref_tick: 0, expiry: 1_800_000_000,
         new_range: RangeSpec{tick_lower:-100, tick_upper:100} };
     f.strategy.harvest(&f.keeper, &Some(plan.to_xdr(&f.e)));
 
@@ -310,7 +316,7 @@ fn rewards_converted_and_fee_skimmed_at_harvest() {
         vec![&f.e, f.strategy.address.clone().into_val(&f.e), 2_000_000_000u128.into_val(&f.e)]);
     mint(&f.e, &f.aqua, &f.strategy.address, 2_000_000_000); // claim pays from strategy-held AQUA? mock claims w/o paying — provide pool AQUA too
     mint(&f.e, &f.xlm, &f.reward_pool, 100_000_000_000);
-    let plan2 = SwapPlan { steps: Vec::new(&f.e), expiry: 1_800_000_000,
+    let plan2 = SwapPlan { steps: Vec::new(&f.e), ref_tick: 0, expiry: 1_800_000_000,
         new_range: RangeSpec{tick_lower:0, tick_upper:0} }; // keep position
     f.strategy.harvest(&f.keeper, &Some(plan2.to_xdr(&f.e)));
     // claimed 2e9 AQUA → swapped to XLM at oracle price (p_aqua/p_xlm=0.5),
@@ -331,8 +337,34 @@ fn stale_oracle_blocks_withdraw() {
 }
 
 #[test]
-fn claim_fees_rejects_wrong_caller() {
+fn claim_fees_permissionless_pays_resolved_recipient() {
     let f = setup();
+    // anyone may trigger; payout destination is resolved on-chain
+    // (role 0 → treasury), never chosen by the caller.
     let rando = Address::generate(&f.e);
-    assert!(f.strategy.try_claim_fees(&rando, &0u32, &f.usdc).is_err());
+    assert_eq!(f.strategy.try_claim_fees(&rando, &0u32, &f.usdc).unwrap().unwrap(), 0);
+}
+
+#[test]
+fn gen_swapplan_xdr() {
+    let e = Env::default();
+    e.cost_estimate().budget().reset_unlimited();
+    let plan = SwapPlan { steps: Vec::new(&e), ref_tick: 0, expiry: 1_900_000_000,
+        new_range: RangeSpec{tick_lower:-100, tick_upper:100} };
+    let b = plan.to_xdr(&e);
+    let mut hex = std::string::String::new();
+    for i in 0..b.len() { use core::fmt::Write; write!(hex, "{:02x}", b.get(i).unwrap()).unwrap(); }
+    println!("PLAN_XDR={}", hex);
+}
+
+#[test]
+fn decode_plan_from_hex() {
+    let e = Env::default();
+    e.cost_estimate().budget().reset_unlimited();
+    let hex = "0000001100000001000000040000000f0000000665787069727900000000000500000000713fb3000000000f000000096e65775f72616e67650000000000001100000001000000020000000f0000000a7469636b5f6c6f776572000000000004ffffff9c0000000f0000000a7469636b5f7570706572000000000004000000640000000f000000087265665f7469636b00000004000000000000000f000000057374657073000000000000100000000100000000";
+    let mut v = std::vec::Vec::<u8>::new();
+    for i in (0..hex.len()).step_by(2) { v.push(u8::from_str_radix(&hex[i..i+2], 16).unwrap()); }
+    let b = soroban_sdk::Bytes::from_slice(&e, &v);
+    let r = SwapPlan::from_xdr(&e, &b);
+    assert!(r.is_ok());
 }

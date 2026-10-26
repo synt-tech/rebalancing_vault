@@ -7,7 +7,8 @@
 //! EmergencyManager role the wrapper assigns to itself).
 #![no_std]
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, Address, BytesN, Env,
+    auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
+    contract, contracterror, contractimpl, contracttype, vec, Address, BytesN, Env,
     IntoVal, Map, String, Symbol, Val, Vec,
 };
 
@@ -108,6 +109,7 @@ impl Platform {
         deploy_args.push_back(caller.clone().into_val(&e));
         deploy_args.push_back(template_hash.into_val(&e));
         deploy_args.push_back(salt.into_val(&e));
+        deploy_args.push_back(asset.clone().into_val(&e));
         deploy_args.push_back(init_args.into_val(&e));
         let strategy: Address = e.invoke_contract(
             &registry,
@@ -151,12 +153,29 @@ impl Platform {
             factory_args,
         );
 
-        // 3. Bind strategy ↔ vault (registry records provenance).
+        // 3. Bind strategy ↔ vault (registry records provenance). The registry
+        //    calls back into the platform (`platform.require_auth()`), so the
+        //    platform must authorize its own contract invocation.
         let mut bind_args: Vec<Val> = Vec::new(&e);
         bind_args.push_back(strategy.clone().into_val(&e));
         bind_args.push_back(vault.clone().into_val(&e));
+        e.authorize_as_current_contract(vec![
+            &e,
+            InvokerContractAuthEntry::Contract(SubContractInvocation {
+                context: ContractContext {
+                    contract: registry.clone(),
+                    fn_name: Symbol::new(&e, "bind_vault"),
+                    args: bind_args.clone().into_val(&e),
+                },
+                sub_invocations: Vec::new(&e),
+            }),
+        ]);
         e.invoke_contract::<()>(&registry, &Symbol::new(&e, "bind_vault"), bind_args);
 
+        e.events().publish(
+            (Symbol::new(&e, "VaultListed"),),
+            (vault.clone(), strategy.clone()),
+        );
         (vault, strategy)
     }
 

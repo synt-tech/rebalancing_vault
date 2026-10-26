@@ -30,7 +30,7 @@ token — the vault swaps it into place for you — and a keeper
 automatically rebalances the position whenever price drifts out of range.
 
 ## 3. Architecture
-shot: 03_architecture.png
+shot: 03_composed_figure.png
 dur: 14
 caption: DeFindex custody x Aquarius liquidity x Reflector oracle
 voice: It is Stellar Composed end to end — an audited DeFindex vault for
@@ -45,22 +45,50 @@ voice: Here is what using it looks like. Connect, deposit either pool
 token, receive vault shares — one atomic transaction, swap included.
 No ranges to pick, no bundles to sign.
 
-## 5. Managed position
-shot: 05_position.png
-dur: 14
-caption: Fees claimed, rewards converted, re-ranged on exit
-voice: Under the hood, the strategy claims pool fees, converts AQUA
-rewards, and re-ranges the position when price exits the band — always
-inside on-chain policy limits.
+## 5. The managed position
+shot: rebal_05_baseline_inrange_tick0.png
+dur: 10
+caption: In range: the band sits around the live price — earning
+voice: This is the vault's position on the live pool — the band wrapped
+around the current price, both tokens working, in range.
 
-## 6. Walkthrough — withdraw
+## 6. Price drifts
+shot: rebal_06_tick600_drifting.png
+dur: 9
+caption: Still in range — but the holdings are already drifting
+voice: The market starts to move. Still in range, still earning — but
+the position mix is already sliding toward one side.
+
+## 7. Out of range
+shot: rebal_07_tick1550_oor.png
+dur: 10
+caption: Price leaves the band — fully flipped, earning nothing
+voice: Past the band edge the position flips to all one token and stops
+earning — the moment a manual LP would have to act.
+
+## 8. Keeper rebalance
+shot: rebal_09_rebalanced_800_3800.png
+dur: 13
+caption: Keeper proposes; contract unwinds, swaps, re-mints atomically
+voice: The keeper proposes a new band. The contract re-checks it against
+policy and oracle prices, then unwinds, swaps and re-mints in one atomic
+transaction — back in range.
+
+## 9. On-chain receipt
+shot: rebal_10_keeper_harvest_tx.png
+dur: 9
+caption: One keeper call on a public explorer — the whole rebalance
+voice: One harvest call, signed and confirmed on testnet — the whole
+rebalance is a single transaction on a public explorer.
+
+## 10. Walkthrough — withdraw
 shot: 06_withdraw.png
 dur: 10
 caption: One transaction out: unwind to either or both tokens
 voice: One transaction out. The position unwinds and delivers value
 straight back — in either or both pool tokens, your pick.
 
-## 7. Testnet proof
+## 11. Testnet proof
 shot: 07_deployments.png
 dur: 14
 caption: Live on testnet: contracts, a vault, verified transactions
@@ -69,7 +97,7 @@ and verified deposit, harvest and withdraw transactions — plus a fork
 test that replays the real mainnet pool and Reflector contracts. All
 built this weekend on an audited foundation.
 
-## 8. Hackathon progress
+## 12. Hackathon progress
 shot: 08_progress.png
 dur: 12
 caption: New this weekend: the whole share-token platform layer
@@ -77,7 +105,7 @@ voice: We started from a private prototype and shipped the entire
 share-token and platform layer — strategy, registry, platform contracts,
 tests and deployment — during the hackathon.
 
-## 9. Roadmap
+## 13. Roadmap
 shot: 09_roadmap.png
 dur: 10
 caption: Next: real pools, strategy templates, third-party strategists

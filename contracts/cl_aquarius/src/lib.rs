@@ -187,7 +187,7 @@ impl DeFindexStrategyTrait for ClAquarius {
         let ref_px = ref_price_1e14(&e, &pool, &get(&e, &DataKey::Oracle), &t0, &t1, &policy)?;
         let asset_is_0 = asset == t0;
         let (foreign, asset_tok) = if asset_is_0 { (&t1, &t0) } else { (&t0, &t1) };
-        let idle_asset = TokenClient::new(&e, asset_tok).balance(&me);
+        let idle_asset = spendable(&e, asset_tok);
         let mut delivered = idle_asset.min(amount);
         if delivered < amount {
             let shortfall = amount - delivered;
@@ -197,7 +197,7 @@ impl DeFindexStrategyTrait for ClAquarius {
             } else {
                 shortfall * ref_px / cl_core::ORACLE_SCALE
             };
-            let avail_foreign = TokenClient::new(&e, foreign).balance(&me);
+            let avail_foreign = spendable(&e, foreign);
             let swap_in = needed_foreign.min(avail_foreign);
             if swap_in > 0 {
                 let out_min = (if asset_is_0 {
@@ -271,8 +271,8 @@ impl DeFindexStrategyTrait for ClAquarius {
 
         // deploy into new range
         if let Some((tl, tu)) = plan.new_range {
-            let b0 = TokenClient::new(&e, &t0).balance(&me);
-            let b1 = TokenClient::new(&e, &t1).balance(&me);
+            let b0 = spendable(&e, &t0).max(0);
+            let b1 = spendable(&e, &t1).max(0);
             if b0 > 0 || b1 > 0 {
                 let (used, liq) = pool.deposit_position(
                     &me,
@@ -469,8 +469,6 @@ fn compute_balance_now(e: &Env, pool_addr: &Address, asset: &Address, policy: &P
         asset,
         &pos,
         policy,
-        owed(e, Role::Platform, asset),
-        owed(e, Role::Operator, asset),
     )
 }
 

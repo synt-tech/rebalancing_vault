@@ -82,6 +82,14 @@ pub fn ref_price_1e14(
 /// vault asset. `asset_idx` is 0 if vault asset == token0, else 1.
 /// Uncollected LP fees are netted by `perf_fee_bps`; `fees_owed` totals in the
 /// vault asset are excluded; unclaimed rewards are excluded entirely.
+/// Spendable balance of `token`: raw balance minus accrued `fees_owed`
+/// (owed funds are not strategy capital and must never be spent).
+pub fn spendable(e: &Env, token: &Address) -> i128 {
+    let me = e.current_contract_address();
+    let raw = TokenClient::new(e, token).balance(&me);
+    raw - owed(e, Role::Platform, token) - owed(e, Role::Operator, token)
+}
+
 pub fn compute_balance(
     e: &Env,
     pool: &ClPoolClient,
@@ -91,8 +99,6 @@ pub fn compute_balance(
     asset: &Address,
     pos: &Option<Position>,
     p: &Policy,
-    owed_platform_asset: i128,
-    owed_operator_asset: i128,
 ) -> Result<i128, StrategyError> {
     let me = e.current_contract_address();
     let ref_px = ref_price_1e14(e, pool, oracle, token0, token1, p)?;
@@ -112,17 +118,16 @@ pub fn compute_balance(
             v1 += fees.get(1).unwrap_or(0) as i128 * keep / BPS;
         }
     }
-    let idle0 = TokenClient::new(e, token0).balance(&me);
-    let idle1 = TokenClient::new(e, token1).balance(&me);
-    v0 += idle0;
-    v1 += idle1;
+    // Spendable idle only — fees_owed excluded for BOTH tokens.
+    v0 += spendable(e, token0);
+    v1 += spendable(e, token1);
 
     let total_asset = if asset_is_0 {
         v0 + v1 * ORACLE_SCALE / ref_px
     } else {
         v0 * ref_px / ORACLE_SCALE + v1
     };
-    Ok((total_asset - owed_platform_asset - owed_operator_asset).max(0))
+    Ok(total_asset.max(0))
 }
 
 /// Accrue a performance fee on `income` (in `token`) into `fees_owed`.

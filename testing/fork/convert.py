@@ -16,11 +16,12 @@ integer payloads differ:
 
 Addresses keep strkey form (ScAddress is Display-serialized); bytes are hex.
 
-`stellar snapshot create` does not emit contract_code entries; pass each
-executable's `hash:path` (fetched via `stellar contract fetch`) and the
-pair is appended so snapshot-registered contracts can actually execute.
+`stellar snapshot create` does not emit contract_code or classic account
+entries; pass each executable's `hash:path` (fetched via `stellar contract
+fetch`) to append code, and `--account GADDR:FLAGS` to synthesize a minimal
+issuer account (SAC `is_asset_auth_required` reads issuer account flags).
 
-Usage: convert.py in.json out.json [hash:wasmfile ...]
+Usage: convert.py in.json out.json [--account GADDR:FLAGS ...] [hash:wasmfile ...]
 """
 import json
 import sys
@@ -81,19 +82,34 @@ def main() -> None:
     d = json.load(open(src))
     out = {k: d[k] for k in d if k != "ledger_entries"}
     # Local env-host may not support the live protocol version; clamp it.
-    out["protocol_version"] = min(int(out.get("protocol_version", 0)), 22)
+    out["protocol_version"] = min(int(out.get("protocol_version", 0)), 29)
     out["ledger_entries"] = [
         [ledger_key(e["entry"]), [convert(e["entry"]), e.get("live_until")]]
         for e in d["ledger_entries"]
     ]
+    seq = d["sequence_number"]
     for spec in sys.argv[3:]:
+        if spec.startswith("--account="):
+            gaddr, flags = spec[10:].rsplit(":", 1)
+            entry = {"last_modified_ledger_seq": seq,
+                     "data": {"account": {
+                         "account_id": gaddr, "balance": 1000000000000,
+                         "seq_num": 0, "num_sub_entries": 0,
+                         "inflation_dest": None, "flags": int(flags),
+                         "home_domain": "", "thresholds": "01000000",
+                         "signers": [], "ext": "v0"}},
+                     "ext": "v0"}
+            out["ledger_entries"].append(
+                [{"account": {"account_id": gaddr}}, [entry, 4294967295]])
+            print(f"injected account {gaddr[:12]}… flags={flags}")
+            continue
         h, path = spec.split(":", 1)
         entry = {"last_modified_ledger_seq": d["sequence_number"],
                  "data": {"contract_code": {"ext": "v0", "hash": h,
                           "code": open(path, "rb").read().hex()}},
                  "ext": "v0"}
         out["ledger_entries"].append(
-            [{"contract_code": {"hash": h}}, [entry, None]])
+            [{"contract_code": {"hash": h}}, [entry, 4294967295]])
         print(f"injected wasm {h[:12]}… ({path})")
     json.dump(out, open(dst, "w"))
     print(f"{dst}: {len(out['ledger_entries'])} entries")

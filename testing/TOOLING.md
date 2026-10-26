@@ -60,12 +60,11 @@ how actionable each is for this project **today**.
    — done: `fuzz_plan_decode`, `fuzz_plan_structured`,
    `fuzz_deposit_withdraw` in `contracts/cl_aquarius/fuzz/` (TESTING.md).
    Extend with `set_policy` arbitrary `Policy` vs ceilings.
-3. ~~Fork test via `stellar snapshot create`~~ — pipeline built
-   (`testing/fork/`: snapshot + `convert.py` + `test_fork.rs`); verified
-   the live ABI 1:1 via `stellar contract info interface` and surfaced
-   3 real bugs. **Execution blocked**: deployed WASMs are env protocol
-   v25/v28, workspace is SDK 22 — needs the SDK≥25 upgrade first
-   (see `testing/fork/README.md`).
+3. ~~Fork test via `stellar snapshot create`~~ — DONE, passing
+   end-to-end on a mainnet snapshot with the strategy as compiled WASM;
+   per-op `InvocationResources` now printed (redeploy 156M, withdraw
+   275M of the 400M tx cap). See `testing/fork/README.md` for the
+   regeneration recipe and the dependency-closure checklist.
 4. `proptest` invariants once fuzzing surfaces anything.
 5. `cargo-mutants` before any external audit.
 6. Sunbeam/Komet + Audit Bank only if shipping to mainnet.

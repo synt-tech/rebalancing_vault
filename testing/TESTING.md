@@ -111,12 +111,18 @@ pool/oracle fixtures:
 
 ## Coverage gaps (next tests to write)
 
-- **Fork test execution** — `test_fork` is ready but ignored: real WASMs
-  need env-host ≥v25 (workspace pins SDK 22). Unblock via SDK upgrade,
-  then this replaces the mock entirely — see `testing/fork/README.md`.
-- **Position unwind path in `withdraw`** — currently only idle-funded
-  withdrawal is unit-tested; pro-rata `withdraw_position` + foreign-leg
-  conversion needs a mock that returns position value.
+- ~~**Fork test**~~ — DONE. `test_fork::fork_real_pool_full_flow` passes
+  end-to-end on a real mainnet snapshot (ledger ~65.14M): live
+  Reflector prices via per-asset routes, whale-funded deposit,
+  unwind-only harvest, redeploy into a live-tick-derived single-sided
+  USDC band (`[-18380,-17880]` at tick −17872), balance, and a partial
+  withdraw through the open real position — with the strategy running
+  as its **compiled WASM** and per-op `InvocationResources` printed
+  (redeploy 156M instr, withdraw 275M instr vs the 400M tx cap).
+  See `testing/fork/README.md`.
+- **Position unwind path in `withdraw` (mock coverage)** — the fork test
+  exercises it on the real pool; a mock that returns position value
+  would add cheap per-commit coverage.
 - **Under-delivery through the vault** — `leaky_strategy` covers it in
   the defindex clone; an equivalent cl_aquarius-side case would exercise
   the P2 `min_amounts_out`-on-delivered check end-to-end.
@@ -136,8 +142,11 @@ pool/oracle fixtures:
 ## Known caveats / deliberately out of scope
 
 - `harvest` exceeds the default test budget (auth entries + full path);
-  tests run with `reset_unlimited`. **Real-pool resource profiling is a
-  pending calibration task**, not a passing assumption.
+  tests run with `reset_unlimited`. Real-pool profiling (fork test,
+  strategy-as-WASM): deposit 5.3M / unwind 15.5M / redeploy 156.5M /
+  withdraw 274.8M modeled instructions vs the 400M mainnet tx cap —
+  all fit; withdraw is the heavy path (~69%). Keep harvest+withdraw out
+  of single transactions in keeper design.
 - `balance()` assumes equal token decimals (XLM/USDC are both 7dp).
 - Withdrawal-before-harvest: uncollected LP fees are fee-netted in
   `balance()`; unclaimed rewards are excluded entirely (exiting holder

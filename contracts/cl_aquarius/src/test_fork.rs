@@ -15,8 +15,8 @@
 extern crate std;
 use super::*;
 use soroban_sdk::{
-    testutils::Address as _, token::StellarAssetClient, vec, xdr::ToXdr, Address, Env, IntoVal,
-    Symbol, Vec,
+    testutils::Address as _, token::TokenClient, vec, xdr::ToXdr, Address, Env, IntoVal, Symbol,
+    Vec,
 };
 use std::println;
 
@@ -34,9 +34,12 @@ const POOL: &str = "CBBMQBNHB2FYVZYV7VNHOJHUMTFJLR4PUMRVQYNW6RHIKZO2NQMIBUCV"; /
 const REFLECTOR_DEX: &str = "CALI2BYU2JE6WVRUFYTS6MSBNEHGJ35P4AVCZYF3B6QOE3QKOB2PLE6M"; // AQUA feed
 const REFLECTOR_EXT: &str = "CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN"; // XLM/USDC feed
 const REWARD_POOL: &str = "CAVB532FDYEWBXNSCSKACTZI3BV3QBNFLH2UQRR5HIKFKLFVQW5YGZVY"; // XLM/AQUA concentrated
-const XLM: &str = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
+const XLM: &str = "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA"; // native SAC (pool t0)
 const USDC: &str = "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75";
 const AQUA: &str = "CAUIKL3IYGMERDRUN6YSCLWVAKIFG5Q4YJHUKM4S4NJZQIA3BAS6OJPK";
+// Largest USDC Balance entry in the snapshot (~55M) — funds the vault via
+// transfer because `mint` needs the issuer's classic account (not snapshotted).
+const USDC_WHALE: &str = "CAHEWHOPPDBQYFMAOLDOXXGUX2BCR7EXP4CWYCRY3NEAJB35YPZMMJFF";
 
 fn addr(e: &Env, s: &str) -> Address {
     Address::from_str(e, s)
@@ -68,6 +71,8 @@ fn policy(_e: &Env, venues: Vec<Address>) -> Policy {
 fn fork_real_pool_full_flow() {
     let e = Env::from_ledger_snapshot_file(SNAPSHOT);
     e.mock_all_auths_allowing_non_root_auth();
+    // Real pool + Reflector WASMs exceed the default test budget.
+    e.cost_estimate().budget().reset_unlimited();
 
     let pool_addr = addr(&e, POOL);
     let oracle_ext = addr(&e, REFLECTOR_EXT);
@@ -152,15 +157,39 @@ fn fork_real_pool_full_flow() {
         reward_addr.clone().into_val(&e),
         routes.into_val(&e),
     ];
-    let strat_addr = e.register(ClAquarius, (usdc.clone(), init_args));
+    // Register the strategy as its compiled WASM when the artifact exists so
+    // resource metering covers real VM execution; fall back to native
+    // registration when it hasn't been built.
+    let wasm_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../target/wasm32v1-none/release/cl_aquarius_strategy.wasm"
+    );
+    let strat_addr = match std::fs::read(wasm_path) {
+        Ok(wasm) => {
+            println!("strategy registration: wasm ({} bytes)", wasm.len());
+            e.register_at(
+                &<Address as soroban_sdk::testutils::Address>::generate(&e),
+                wasm.as_slice(),
+                (usdc.clone(), init_args),
+            )
+        }
+        Err(_) => {
+            println!("strategy registration: native (wasm artifact missing)");
+            e.register(ClAquarius, (usdc.clone(), init_args))
+        }
+    };
     let strategy = ClAquariusClient::new(&e, &strat_addr);
     strategy.bind(&vault, &vault);
 
-    // --- 3. Deposit real USDC (SAC admin mint under mocked auth) ---
+    // --- 3. Fund the vault with real USDC via a whale transfer ---
+    // (SAC `mint` reads the issuer's classic account entry, which the
+    // snapshot does not contain; transfer only needs the sender's
+    // Balance entry + receive side, both present.)
     let amt: i128 = 10_000_000; // 1 USDC
-    StellarAssetClient::new(&e, &usdc).mint(&vault, &amt);
+    TokenClient::new(&e, &usdc).transfer(&addr(&e, USDC_WHALE), &vault, &amt);
     let b = strategy.deposit(&amt, &vault);
     println!("deposit -> {}", b);
+    println!("deposit resources: {:?}", e.cost_estimate().resources());
     assert!(b > 0);
 
     // --- 4. Harvest with a real-shaped plan: unwind-only (no redeploy) ---
@@ -176,6 +205,7 @@ fn fork_real_pool_full_flow() {
     };
     let r = strategy.try_harvest(&keeper, &Some(plan.to_xdr(&e)));
     println!("harvest(unwind-only) -> {:?}", r);
+    println!("unwind resources: {:?}", e.cost_estimate().resources());
     assert!(r.is_ok(), "unwind-only harvest must succeed on real state");
 
     // --- 5. Redeploy: single-sided range fully ABOVE the current tick
@@ -183,9 +213,9 @@ fn fork_real_pool_full_flow() {
     // pool pulls only what the geometry needs — strategy holds only USDC
     // so we let the real pool's amount math decide).
     let usdc_is_t0 = t0 == usdc;
-    // snap `tick` up to the next spacing boundary, then take a ±5% band
-    // of ticks (500 ticks ≈ 5%) entirely above it when USDC is t0;
-    // if USDC is t1 we instead take the band below (t1-only side).
+    // Uniswap-v3 semantics: price below the range => position holds only
+    // token0; above => only token1. USDC is t1 here, so the USDC-only side
+    // is the band BELOW spot.
     let width = (500 / spacing) * spacing;
     let (tl, tu) = if usdc_is_t0 {
         let lo = ((tick / spacing) + 1) * spacing;
@@ -204,9 +234,10 @@ fn fork_real_pool_full_flow() {
             tick_upper: tu,
         },
     };
-    let r2 = strategy.try_harvest(&keeper, &Some(plan2.to_xdr(&e)));
-    println!("harvest(redeploy) -> {:?}", r2);
-    assert!(r2.is_ok(), "redeploy harvest must succeed on real state");
+    // Not try_: on failure we want the host's event trace to locate the abort.
+    strategy.harvest(&keeper, &Some(plan2.to_xdr(&e)));
+    println!("harvest(redeploy) -> ok");
+    println!("redeploy resources: {:?}", e.cost_estimate().resources());
 
     // --- 6. Balance + partial withdraw through the open real position ---
     let bal = strategy.balance(&vault);
@@ -214,5 +245,6 @@ fn fork_real_pool_full_flow() {
     assert!(bal > 0);
     let w = strategy.try_withdraw(&(amt / 2), &vault, &vault);
     println!("withdraw {} -> {:?}", amt / 2, w);
+    println!("withdraw resources: {:?}", e.cost_estimate().resources());
     assert!(w.is_ok());
 }

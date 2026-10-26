@@ -176,12 +176,24 @@ formal verification).
       current mocks (SAC trustlines always exist in tests; the mock pool
       always pays `out_min`). Needs a mock knob or fork test.
 
+## Audited since — real-mainnet fork results (2026-10-26)
+
+- **Resource-budget profile** — DONE on real WASMs. InvocationResources
+  vs live `tx_max_instructions`=400M / `tx_memory_limit`=40MiB:
+  deposit 5.3M/4.9MB (1.3%), unwind 15.5M/13.4MB (3.9%),
+  redeploy 156.5M/23.6MB (39%), withdraw 274.8M/25.9MB (69%). All fit;
+  document that compound keeper ops must stay one-call-per-tx.
+- **Parameter sanity** — the default policy envelope (oracle band, loss
+  budget, cooldowns, reward thresholds) accepted a live-state deposit,
+  unwind, single-sided redeploy, and withdraw without tripping — a first
+  calibration pass on real data. Deeper tuning (band width, cadence)
+  remains a keeper-economics question, not a correctness one.
+- **Dependency-closure lesson** — the real pool internally `try_call`s
+  boost-plane contracts (`RewardBoostToken.balance`,
+  `RewardBoostFeed.total_supply`, `Plane.update`); missing instances
+  escalate `Storage MissingValue`→`Abort`. Enumerate externals from the
+  target's instance storage before snapshotting.
+
 ## Not yet audited
 
-- Soroban **resource-budget profile** of the full harvest path on a real
-  pool (claim → withdraw → swap → oracle reads → fee conversion →
-  redeploy) — pending; the mock already exceeds the default test budget.
 - Real Aquarius testnet pool integration (current smoke env uses mocks).
-- Parameter calibration (`perf_fee_bps`, `platform_split_bps`,
-  `oracle_band_bps`, `max_oracle_age`, `max_loss_bps_per_window`,
-  `min_reward_swap`, `max_reward_age`) — pending fork/testnet runs.

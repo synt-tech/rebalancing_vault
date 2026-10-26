@@ -201,7 +201,7 @@ fixture positions, IN RANGE, holdings 2,212 XLM / 885 USDC:
 | USDC SAC | `CBMUABTPC5WH5IRYEQVYTSJ6DSN5SQUK6ROHEXPNDU36V2HHDMRAW7HN` | issuer agent-1 (mintable) |
 | XLM SAC | `CBGYSLZB6NQEWQSDCSYGRPWQQHN7DFYNGRO3CC4KVCTIQWMHLJIFMLFA` | |
 | AQUA SAC | `CAI4CUGFODGRBM65NCJIL3A2VTTR65AETUGVPU5WTF6XVISQ2MJ5C25Q` | |
-| Batch router | `CBS4PBYTM5O26PFSKYGKN4G6ZFRYWKNJKKQ6CL4JFGFNIXHM637CVXZW` | synt_dex router WASM `a0d74427…` — wraps N invokeContract calls into one `exec(caller, calls)` host-function op so single-op wallets (Freighter) can sign zap bundles |
+| Batch router | `CBS4PBYTM5O26PFSKYGKN4G6ZFRYWKNJKKQ6CL4JFGFNIXHM637CVXZW` | reused internal batch-router WASM `a0d74427…` — wraps N invokeContract calls into one `exec(caller, calls)` host-function op so single-op wallets (Freighter) can sign zap bundles |
 
 ## Verified flows (tx hashes on testnet)
 

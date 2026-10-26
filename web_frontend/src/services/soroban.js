@@ -1,5 +1,5 @@
 // Lean Soroban pipeline for the vault UI: simulate (read) + build/sign/send/poll (write).
-// Modeled on synt_dex's txSubmit — never blind-retry, poll to final fate.
+// Modeled on our prior txSubmit implementation — never blind-retry, poll to final fate.
 
 import {
   rpc, Contract, TransactionBuilder, Networks, BASE_FEE,

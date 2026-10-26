@@ -61,8 +61,8 @@ function ensureInit() {
         new WalletConnectModule({
           projectId: WC_PROJECT_ID,
           metadata: {
-            name: 'synt_dex',
-            description: 'synt_tech_dex — stellar trading interface',
+            name: 'Y.A.R.V.',
+            description: 'Y.A.R.V. — automated rebalancing vaults',
             url: window.location.origin + import.meta.env.BASE_URL,
             icons: [`${window.location.origin}${import.meta.env.BASE_URL}gears.svg`],
           },

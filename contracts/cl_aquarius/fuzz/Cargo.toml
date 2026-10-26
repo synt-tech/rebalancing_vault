@@ -1,0 +1,38 @@
+[workspace]
+
+[package]
+name = "cl_aquarius-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+soroban-sdk = { version = "22.0.8", features = ["testutils"] }
+cl_aquarius_strategy = { path = "..", features = ["testutils"] }
+# Match the workspace Cargo.lock versions — soroban-env-host testutils
+# breaks against rand 0.9/rand_core 0.10 (ChaCha20Rng CryptoRng bound).
+rand = "=0.8.5"
+rand_core = "=0.6.4"
+ed25519-dalek = "=2.2.0"
+
+[[bin]]
+name = "fuzz_plan_decode"
+path = "fuzz_targets/fuzz_plan_decode.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_deposit_withdraw"
+path = "fuzz_targets/fuzz_deposit_withdraw.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_plan_structured"
+path = "fuzz_targets/fuzz_plan_structured.rs"
+test = false
+doc = false

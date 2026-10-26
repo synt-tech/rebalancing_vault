@@ -52,6 +52,41 @@ null-router, strategy-template and mock-pool WASMs.
 | `create_vault_deploys_binds_and_runs_deposit` | audit residual #1: `create_vault` → `deploy_strategy` → `create_defindex_vault` → `bind_vault` E2E — vault roles pinned (EmergencyManager=platform, Manager/FeeReceiver=caller, RebalanceManager=keeper), `init_args[2..3]` junk overridden by registry pinning, strategy bound with provenance recorded, live deposit through the created vault |
 | `deploy_rejects_unlisted_pool` | audit residual A9: pool not in `Venues` → deploy reverts |
 
+## Fuzzing
+
+`contracts/cl_aquarius/fuzz/` is a standalone `cargo-fuzz` crate (own
+`[workspace]`, own lockfile pinned to the workspace resolutions — see
+`TOOLING.md`). Requires nightly. Commands from `contracts/cl_aquarius/`:
+
+```bash
+cargo +nightly fuzz run fuzz_plan_decode -- -max_total_time=300
+cargo +nightly fuzz run fuzz_plan_structured -- -max_total_time=300
+cargo +nightly fuzz run fuzz_deposit_withdraw -- -max_total_time=300
+```
+
+| Target | Input under test | Invariants |
+|---|---|---|
+| `fuzz_plan_decode` | arbitrary bytes → `try_harvest(keeper, Some(data))` | XDR decode + `validate_plan` + full harvest never panic in strategy code; any `Err` is legal |
+| `fuzz_plan_structured` | `SorobanArbitrary` `SwapPlan` biased into the policy envelope (allowlisted venues, spacing-snapped ticks, boundary-straddling `out_min`/`expiry`) | same as above, but reaches post-decode internals; also `balance()` stays non-negative |
+| `fuzz_deposit_withdraw` | `(i128 deposit, i128 withdraw)` | d ≤ 0 must be rejected; delivered ≤ min(w, deposited) ≥ 0; strategy balance in [0, deposit] |
+
+Results so far (first campaigns, empty corpus):
+
+| Target | Runs | Duration | Crashes | Coverage |
+|---|---|---|---|---|
+| `fuzz_plan_decode` | 229 | 90s | 0 | ~13.2k cov — stalls at the decode gate, as expected for raw bytes |
+| `fuzz_plan_structured` | 369 | 120s | 0 | ~14.1k cov / 19.3k ft — reaches swap/redeploy internals |
+| `fuzz_deposit_withdraw` | 3 379 | 90s | 0 | ~13.0k cov / 21.5k ft |
+
+Harness findings fixed during setup (not contract bugs): the
+deposit/withdraw fixture initially registered the pool with `sqrt=1`
+(spot≈0) so the oracle-band check in `compute_balance` rejected every
+deposit — corrected to the oracle-consistent √2.5·2⁹⁶. Two lazy-`Vec`-get
+panics in harness code switched to `try_get`.
+
+Generated corpus entries under `fuzz/corpus/` are kept as regression
+seeds. `fuzz/artifacts/` and `fuzz/target/` are gitignored.
+
 ## Testnet smoke environment (verified flows)
 
 Full stack deployed on Stellar testnet — see `DEPLOYMENTS.md` for all

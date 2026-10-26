@@ -56,14 +56,27 @@ how actionable each is for this project **today**.
 ## Recommended order
 
 1. `cargo scout-audit` on `contracts/` — cheapest broad signal.
-2. `cargo-fuzz` targets on `harvest`/`deposit`/`withdraw`/`balance` —
-   panic-freedom is a real invariant here (trait returns typed errors).
+2. ~~`cargo-fuzz` targets on `harvest`/`deposit`/`withdraw`/`balance`~~
+   — done: `fuzz_plan_decode`, `fuzz_plan_structured`,
+   `fuzz_deposit_withdraw` in `contracts/cl_aquarius/fuzz/` (TESTING.md).
+   Extend with `set_policy` arbitrary `Policy` vs ceilings.
 3. Fork test via `stellar snapshot create` on the live Aquarius pool +
    Reflector — replaces the mock with the real ABI offline.
 4. `proptest` invariants once fuzzing surfaces anything.
 5. `cargo-mutants` before any external audit.
 6. Sunbeam/Komet + Audit Bank only if shipping to mainnet.
 
-Not installed locally yet: `cargo-fuzz` (needs a nightly toolchain),
-`cargo-mutants`. **Installed**: `cargo-scout-audit` 0.3.17 — run results
-in `AUDIT.md` (cl_aquarius at 0 critical findings).
+**Installed**: `cargo-scout-audit` 0.3.17 (results in `AUDIT.md`,
+cl_aquarius at 0 critical findings); nightly Rust `1.101.0-nightly` +
+`cargo-fuzz` 0.13.2 with three live targets (results in `TESTING.md` —
+fuzz crate notes below). Not installed yet: `cargo-mutants`.
+
+`cl_aquarius/fuzz` setup notes: the crate carries its own `[workspace]`
+(cargo-fuzz rejects workspace membership) and its `Cargo.lock` is pinned
+to the workspace dependency resolution — a fresh `cargo fuzz` resolution
+picks `ed25519-dalek 3.x`/`rand 0.9`, which breaks
+`soroban-env-host`'s `ChaCha20Rng` bounds, so the lockfile is kept in git
+deliberately. The `cl_aquarius_strategy` lib gained `crate-type =
+["cdylib","rlib"]` and a `testutils` feature forwarding
+`soroban-sdk/testutils` so `#[contracttype]` types derive
+`SorobanArbitrary` for `fuzz_plan_structured`.

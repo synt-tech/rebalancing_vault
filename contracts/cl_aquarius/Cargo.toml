@@ -6,7 +6,7 @@ license = "GPL-3.0"
 publish = false
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 soroban-sdk = { workspace = true }
@@ -14,3 +14,7 @@ defindex-strategy-core = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[features]
+# Enables `SorobanArbitrary` on contracttypes for the fuzz crate.
+testutils = ["soroban-sdk/testutils"]

@@ -26,6 +26,15 @@ Read together with `../DEPLOYMENTS.md` (deployed addresses) and
    `max_oracle_age` and correctness bounded by `oracle_band_bps` vs pool
    spot. A stale-but-fresh-enough manipulated feed inside the band is a
    residual risk — bounded by `max_slippage_bps` on every swap min-out.
+   Verified live on mainnet: no single public feed covers every asset —
+   XLM/USDC exist only on the external CEX+DEX USD feed
+   (`CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN`, identifier
+   `Other(symbol)`, e.g. XLM=$0.1673 USDC=$1.0011), AQUA only on the
+   Stellar-DEX feed (`CALI2BYU…`, identifier `Stellar(sac)`,
+   base=USDC). The strategy therefore routes `oracle_price` per-asset via
+   `OracleOf`/`OracleAssetOf` set at init (`init_args[7] =
+   Vec<OracleRoute>`), defaulting to the init oracle + `Stellar(asset)`.
+   `PriceData.timestamp` is seconds-scaled — `max_oracle_age` works.
 3. **Keeper (RebalanceManager)** proposes `SwapPlan`s — "keeper proposes,
    contract disposes": every step's venue must be allowlisted, every
    `out_min` is checked against the oracle price × `(1−max_slippage_bps)`,
@@ -74,6 +83,24 @@ Read together with `../DEPLOYMENTS.md` (deployed addresses) and
 
 ## Resolved since first review
 
+- ~~**Inverted oracle ratio convention** (`ref_price_1e14`,
+  `check_oracle_band`, `withdraw` conversion): `ref_px` was documented as
+  "units of token1 per token0" but computed as `p1/p0` — the *inverse*.
+  `check_oracle_band` compared pool spot (units t1/t0) against that
+  inverted ratio, so on a real pool (sorted tokens, e.g. t0=USDC $1,
+  t1=XLM $0.40 → fair units 2.5 XLM/USDC) it computed `0.4` vs spot `2.5`
+  and would revert **every** oracle-gated path (deposit, withdraw,
+  harvest). `compute_balance`'s conversions were also inverted under that
+  convention. The mock fixture masked the bug: it set
+  `sqrt = √2.5` — self-consistent with the inverted ratio, not with real
+  economics — and no test asserted a value that distinguishes the two
+  conventions (idle-only USDC paths are conversion-vacuous). Fixed:
+  `ref_px` now genuinely means units-of-t1-per-unit-t0 (`p0/p1`),
+  matching its doc comment, the spot direction, and `compute_balance`;
+  `withdraw`'s two conversion arms were swapped to match. Fixtures
+  updated to `√0.4·2⁹⁶`. **Exactly the bug class fork testing exists to
+  catch** — a unit-test fixture that is internally consistent cannot
+  detect it; only real-pool state does.
 - ~~`min_reward_swap` gate ran post-claim, stranding below-threshold
   rewards as unvalued custody dust that could never retry.~~ Fixed: the
   gate now reads `get_user_reward` and skips claiming entirely below the

@@ -34,9 +34,16 @@ pub fn cdiv_u(a: u128, b: u128) -> Result<u128, StrategyError> {
 }
 
 /// Fresh oracle price of `asset` in USDC (1e14 scale), or error.
-pub fn oracle_price(e: &Env, oracle: &Address, asset: &Address, p: &Policy) -> Result<i128, StrategyError> {
-    let pd = ReflectorClient::new(e, oracle)
-        .try_lastprice(&OracleAsset::Stellar(asset.clone()))
+/// Routes through the asset's configured feed/identifier when one was set
+/// at init (`OracleOf`/`OracleAssetOf`), else the default `DataKey::Oracle`
+/// under `Stellar(asset)`.
+pub fn oracle_price(e: &Env, asset: &Address, p: &Policy) -> Result<i128, StrategyError> {
+    let oracle: Address = get_opt(e, &DataKey::OracleOf(asset.clone()))
+        .unwrap_or_else(|| get(e, &DataKey::Oracle));
+    let aid: OracleAsset = get_opt(e, &DataKey::OracleAssetOf(asset.clone()))
+        .unwrap_or_else(|| OracleAsset::Stellar(asset.clone()));
+    let pd = ReflectorClient::new(e, &oracle)
+        .try_lastprice(&aid)
         .ok()
         .and_then(|r| r.ok())
         .flatten()
@@ -61,20 +68,20 @@ pub fn spot_price_1e14(e: &Env, sqrt_price_x96: &U256) -> U256 {
 pub fn check_oracle_band(
     e: &Env,
     pool: &ClPoolClient,
-    oracle: &Address,
     token0: &Address,
     token1: &Address,
     p: &Policy,
 ) -> Result<(), StrategyError> {
     let slot0 = pool.get_slot0();
     let spot = spot_price_1e14(e, &slot0.sqrt_price_x96).to_u128().unwrap_or(0);
-    let p0 = oracle_price(e, oracle, token0, p)? as u128;
-    let p1 = oracle_price(e, oracle, token1, p)? as u128;
-    if p0 == 0 {
+    let p0 = oracle_price(e, token0, p)? as u128;
+    let p1 = oracle_price(e, token1, p)? as u128;
+    if p1 == 0 {
         return Err(StrategyError::DivisionByZero);
     }
-    // oracle token1/token0 ratio in 1e14 scale
-    let ratio = cdiv(cmul(p1 as i128, ORACLE_SCALE)?, p0 as i128)? as u128;
+    // Fair units of token1 per unit of token0 = $t0 / $t1 (e.g. pool
+    // t0=USDC $1, t1=XLM $0.40 → 2.5 XLM per USDC).
+    let ratio = cdiv(cmul(p0 as i128, ORACLE_SCALE)?, p1 as i128)? as u128;
     let band = cdiv_u(cmul_u(ratio, p.oracle_band_bps as u128)?, BPS as u128)?;
     if spot.abs_diff(ratio) > band {
         return Err(StrategyError::InvalidArgument);
@@ -87,18 +94,18 @@ pub fn check_oracle_band(
 pub fn ref_price_1e14(
     e: &Env,
     pool: &ClPoolClient,
-    oracle: &Address,
     token0: &Address,
     token1: &Address,
     p: &Policy,
 ) -> Result<i128, StrategyError> {
-    check_oracle_band(e, pool, oracle, token0, token1, p)?;
-    let p0 = oracle_price(e, oracle, token0, p)?;
-    let p1 = oracle_price(e, oracle, token1, p)?;
-    if p0 <= 0 {
+    check_oracle_band(e, pool, token0, token1, p)?;
+    let p0 = oracle_price(e, token0, p)?;
+    let p1 = oracle_price(e, token1, p)?;
+    if p1 <= 0 {
         return Err(StrategyError::DivisionByZero);
     }
-    cdiv(cmul(p1, ORACLE_SCALE)?, p0)
+    // Units of token1 per unit of token0: $t0 / $t1.
+    cdiv(cmul(p0, ORACLE_SCALE)?, p1)
 }
 
 /// Value the stored position + uncollected LP fees + idle, denominated in the
@@ -117,7 +124,6 @@ pub fn spendable(e: &Env, token: &Address) -> i128 {
 pub fn compute_balance(
     e: &Env,
     pool: &ClPoolClient,
-    oracle: &Address,
     token0: &Address,
     token1: &Address,
     asset: &Address,
@@ -125,7 +131,7 @@ pub fn compute_balance(
     p: &Policy,
 ) -> Result<i128, StrategyError> {
     let me = e.current_contract_address();
-    let ref_px = ref_price_1e14(e, pool, oracle, token0, token1, p)?;
+    let ref_px = ref_price_1e14(e, pool, token0, token1, p)?;
     let asset_is_0 = *asset == *token0;
 
     let mut v0: i128 = 0;
@@ -203,7 +209,6 @@ pub fn validate_plan(e: &Env, plan: &SwapPlan, p: &Policy, spacing: i32) -> Resu
     if plan.steps.len() > MAX_SWAP_STEPS {
         return Err(StrategyError::InvalidArgument);
     }
-    let oracle: Address = get(e, &DataKey::Oracle);
     for i in 0..plan.steps.len() {
         let s = plan.steps.get(i).unwrap();
         if !p.swap_allowed.contains(&s.pool) {
@@ -213,8 +218,8 @@ pub fn validate_plan(e: &Env, plan: &SwapPlan, p: &Policy, spacing: i32) -> Resu
         let tokens = pool.get_tokens();
         let in_tok = tokens.get(s.in_idx).ok_or(StrategyError::InvalidArgument)?;
         let out_tok = tokens.get(s.out_idx).ok_or(StrategyError::InvalidArgument)?;
-        let p_in = oracle_price(e, &oracle, &in_tok, p)?;
-        let p_out = oracle_price(e, &oracle, &out_tok, p)?;
+        let p_in = oracle_price(e, &in_tok, p)?;
+        let p_out = oracle_price(e, &out_tok, p)?;
         if p_in <= 0 || p_out <= 0 {
             return Err(StrategyError::DivisionByZero);
         }

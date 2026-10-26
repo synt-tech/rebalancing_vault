@@ -52,7 +52,7 @@ fuzz_target!(|input: (i128, i128)| {
     let aqua = e.register_stellar_asset_contract_v2(Address::generate(&e)).address();
     // sqrt ≈ √2.5·2⁹⁶ — consistent with the seeded oracle prices, otherwise
     // deposit's oracle-band check rejects every amount.
-    let sqrtp: u128 = 125_260_000_000_000_000_000_000_000_000;
+    let sqrtp: u128 = 50_108_289_675_009_587_501_223_378_944;
     let pool = e.register(MOCK_WASM, (xlm.clone(), usdc.clone(), sqrtp));
     let reward_pool = e.register(MOCK_WASM, (xlm.clone(), aqua.clone(), 1u128));
     let oracle = e.register(MOCK_WASM, (xlm.clone(), usdc.clone(), 1u128));

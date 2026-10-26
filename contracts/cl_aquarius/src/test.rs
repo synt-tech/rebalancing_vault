@@ -67,7 +67,7 @@ fn setup_with(cooldown_secs: u64, min_reward_swap: i128) -> Fixture {
     let aqua = e.register_stellar_asset_contract_v2(Address::generate(&e));
     let (xlm, usdc, aqua) = (xlm.address(), usdc.address(), aqua.address());
 
-    let sqrtp: u128 = 125_260_000_000_000_000_000_000_000_000; // 1.2526e29 ≈ √2.5·2^96
+    let sqrtp: u128 = 50_108_289_675_009_587_501_223_378_944; // √0.4·2^96: t0=XLM $0.40, t1=USDC $1.00 → 0.4 t1 per t0
     let pool = e.register(MOCK_WASM, (xlm.clone(), usdc.clone(), sqrtp));
     let reward_pool = e.register(MOCK_WASM, (xlm.clone(), aqua.clone(), 1u128));
     // same WASM exports __constructor → every instance must satisfy it
@@ -238,7 +238,7 @@ fn vault_integration_deposit_invest_withdraw() {
     let registry = Address::generate(&e);
     let user = Address::generate(&e);
 
-    let sqrtp: u128 = 125_260_000_000_000_000_000_000_000_000;
+    let sqrtp: u128 = 50_108_289_675_009_587_501_223_378_944;
     let pool = e.register(MOCK_WASM, (xlm.clone(), usdc.clone(), sqrtp));
     let reward_pool = e.register(MOCK_WASM, (xlm.clone(), aqua.clone(), 1u128));
     let oracle = e.register(MOCK_WASM, (xlm.clone(), usdc.clone(), 1u128));

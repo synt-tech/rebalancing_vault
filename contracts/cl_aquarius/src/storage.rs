@@ -93,6 +93,13 @@ pub enum DataKey {
     LastHarvest,
     LastBalance,
     LossTracker,
+    /// Per-asset oracle routing: the oracle contract to query for `asset`,
+    /// and the `OracleAsset` identifier to pass. No single public Reflector
+    /// feed covers all our assets (XLM/USDC live on the external USD feed
+    /// under `Other`, AQUA only on the Stellar-DEX feed under `Stellar`).
+    /// Unset → falls back to `DataKey::Oracle` + `Stellar(asset)`.
+    OracleOf(Address),
+    OracleAssetOf(Address),
 }
 
 pub fn get<T: soroban_sdk::TryFromVal<Env, soroban_sdk::Val>>(e: &Env, k: &DataKey) -> T {

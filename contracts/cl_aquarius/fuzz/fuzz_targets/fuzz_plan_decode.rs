@@ -47,7 +47,7 @@ fuzz_target!(|data: &[u8]| {
     let xlm = e.register_stellar_asset_contract_v2(Address::generate(&e)).address();
     let usdc = e.register_stellar_asset_contract_v2(Address::generate(&e)).address();
     let aqua = e.register_stellar_asset_contract_v2(Address::generate(&e)).address();
-    let sqrtp: u128 = 125_260_000_000_000_000_000_000_000_000;
+    let sqrtp: u128 = 50_108_289_675_009_587_501_223_378_944;
     let pool = e.register(MOCK_WASM, (xlm.clone(), usdc.clone(), sqrtp));
     let reward_pool = e.register(MOCK_WASM, (xlm.clone(), aqua.clone(), 1u128));
     let oracle = e.register(MOCK_WASM, (xlm.clone(), usdc.clone(), 1u128));

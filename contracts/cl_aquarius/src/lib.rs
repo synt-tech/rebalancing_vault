@@ -109,6 +109,16 @@ impl DeFindexStrategyTrait for ClAquarius {
         set(&e, &DataKey::Policy, &policy);
         set(&e, &DataKey::RewardToken, &reward_token);
         set(&e, &DataKey::RewardPool, &reward_pool);
+        // Optional init_args[7]: Vec<OracleRoute> — per-asset feed/identifier
+        // overrides (no single public feed covers every asset we price).
+        if let Some(routes_val) = init_args.get(7) {
+            if let Ok(routes) = Vec::<OracleRoute>::try_from_val(&e, &routes_val) {
+                for r in routes.iter() {
+                    set(&e, &DataKey::OracleOf(r.asset.clone()), &r.oracle);
+                    set(&e, &DataKey::OracleAssetOf(r.asset.clone()), &r.asset_id);
+                }
+            }
+        }
         // opt in to pool rewards (live pools require set_rewards_state)
         ClPoolClient::new(&e, &pool).set_rewards_state(&e.current_contract_address(), &true);
     }
@@ -188,26 +198,28 @@ impl DeFindexStrategyTrait for ClAquarius {
         }
 
         // Convert enough of the foreign leg to cover `amount`, at ref price.
-        let ref_px = ref_price_1e14(&e, &pool, &get(&e, &DataKey::Oracle), &t0, &t1, &policy)?;
+        let ref_px = ref_price_1e14(&e, &pool, &t0, &t1, &policy)?;
         let asset_is_0 = asset == t0;
         let (foreign, asset_tok) = if asset_is_0 { (&t1, &t0) } else { (&t0, &t1) };
         let idle_asset = spendable(&e, asset_tok);
         let mut delivered = idle_asset.min(amount);
         if delivered < amount {
             let shortfall = csub(amount, delivered)?;
-            // foreign input needed: shortfall in asset units → foreign units
+            // foreign input needed: shortfall in asset units → foreign units.
+            // ref_px = units of token1 per unit of token0, so asset=t0 multiplies
+            // by ref_px (t0→t1) and asset=t1 divides (t1→t0).
             let needed_foreign = if asset_is_0 {
-                cdiv(cmul(shortfall, cl_core::ORACLE_SCALE)?, ref_px)?
-            } else {
                 cdiv(cmul(shortfall, ref_px)?, cl_core::ORACLE_SCALE)?
+            } else {
+                cdiv(cmul(shortfall, cl_core::ORACLE_SCALE)?, ref_px)?
             };
             let avail_foreign = spendable(&e, foreign);
             let swap_in = needed_foreign.min(avail_foreign);
             if swap_in > 0 {
                 let gross = if asset_is_0 {
-                    cdiv(cmul(swap_in, ref_px)?, cl_core::ORACLE_SCALE)?
-                } else {
                     cdiv(cmul(swap_in, cl_core::ORACLE_SCALE)?, ref_px)?
+                } else {
+                    cdiv(cmul(swap_in, ref_px)?, cl_core::ORACLE_SCALE)?
                 };
                 let out_min = cdiv(cmul(gross, csub(BPS, policy.max_slippage_bps as i128)?)?, BPS)?;
                 let (in_idx, out_idx) = if asset_is_0 { (1u32, 0u32) } else { (0u32, 1u32) };
@@ -243,8 +255,7 @@ impl DeFindexStrategyTrait for ClAquarius {
         }
         let tokens = pool.get_tokens();
         let (t0, t1) = (tokens.get(0).unwrap(), tokens.get(1).unwrap());
-        let oracle: Address = get(&e, &DataKey::Oracle);
-        check_oracle_band(&e, &pool, &oracle, &t0, &t1, &policy)?;
+        check_oracle_band(&e, &pool, &t0, &t1, &policy)?;
 
         // 1. Claim + convert rewards → pool token, fee cut from swap output.
         claim_and_convert_rewards(&e, &pool_addr, &asset, &policy)?;
@@ -307,7 +318,7 @@ impl DeFindexStrategyTrait for ClAquarius {
         }
 
         // post-check: spot still inside oracle band + loss budget
-        check_oracle_band(&e, &pool, &oracle, &t0, &t1, &policy)?;
+        check_oracle_band(&e, &pool, &t0, &t1, &policy)?;
         let new_bal = compute_balance_now(&e, &pool_addr, &asset, &policy)?;
         check_loss_budget(&e, new_bal, &policy, now)?;
 
@@ -485,12 +496,11 @@ fn claim_and_convert_rewards(e: &Env, pool_addr: &Address, asset: &Address, poli
     }
     let reward_tok: Address = get(e, &DataKey::RewardToken);
     let reward_pool_addr: Address = get(e, &DataKey::RewardPool);
-    let oracle: Address = get(e, &DataKey::Oracle);
 
     // Dust gate on the UNCLAIMED amount: skip claiming entirely below the
     // threshold so the reward stays pool-side and can cross it later.
-    let p_rew = oracle_price(e, &oracle, &reward_tok, policy)?;
-    let p_asset = oracle_price(e, &oracle, asset, policy)?;
+    let p_rew = oracle_price(e, &reward_tok, policy)?;
+    let p_asset = oracle_price(e, asset, policy)?;
     if cdiv(cmul(pending, p_rew)?, p_asset)? < policy.min_reward_swap {
         return Ok(());
     }
@@ -507,7 +517,7 @@ fn claim_and_convert_rewards(e: &Env, pool_addr: &Address, asset: &Address, poli
     } else {
         (1u32, 0u32, rt.get(0).unwrap())
     };
-    let p_out = oracle_price(e, &oracle, &out_tok, policy)?;
+    let p_out = oracle_price(e, &out_tok, policy)?;
     // oracle-derived min-out (equal token decimals assumed, see balance())
     let fair_out = cdiv(cmul(claimed, p_rew)?, p_out)?;
     let out_min = cdiv(cmul(fair_out, csub(BPS, policy.max_slippage_bps as i128)?)?, BPS)?;
@@ -523,7 +533,6 @@ fn compute_balance_now(e: &Env, pool_addr: &Address, asset: &Address, policy: &P
     compute_balance(
         e,
         &pool,
-        &get(e, &DataKey::Oracle),
         &tokens.get(0).unwrap(),
         &tokens.get(1).unwrap(),
         asset,
@@ -557,3 +566,6 @@ fn check_loss_budget(e: &Env, new_bal: i128, policy: &Policy, now: u64) -> Resul
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod test_fork;

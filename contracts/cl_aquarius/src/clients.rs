@@ -67,6 +67,17 @@ pub trait Reflector {
     fn decimals(env: Env) -> u32;
 }
 
+/// Per-asset oracle route set at init: which feed to query and under
+/// which identifier (Reflector feeds disagree — `Other("XLM")` on the
+/// external USD feed vs `Stellar(sac)` on the Stellar-DEX feed).
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct OracleRoute {
+    pub asset: Address,
+    pub oracle: Address,
+    pub asset_id: OracleAsset,
+}
+
 // ---- DeFindex vault (role getters only) ----
 
 #[contractclient(name = "VaultClient")]

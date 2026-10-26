@@ -136,9 +136,10 @@ oracle mark:
    ~0% NAV change → passes loss budget):
    [`f8e640c1`](https://stellar.expert/explorer/testnet/tx/f8e640c17100f39b4f698f9618e0836c1bb194a6de77fbafd60271e0a3cfe008)
 
-**Phase 1 — baseline.** `rebal_05_baseline_inrange_tick0.png`: band
-`[-1500,1500]` interleaved with the fixture positions, IN RANGE,
-holdings 2,212 XLM / 885 USDC.
+**Phase 1 — baseline.** Band `[-1500,1500]` interleaved with the
+fixture positions, IN RANGE, holdings 2,212 XLM / 885 USDC:
+
+![baseline](video/shots/rebal_05_baseline_inrange_tick0.png)
 
 **Phase 2 — gradual drift (each step = `set_spot` + `set_price`):**
 
@@ -146,28 +147,42 @@ holdings 2,212 XLM / 885 USDC.
    [`9984fcb7`](https://stellar.expert/explorer/testnet/tx/9984fcb710b32b234b8610382e8f3ac5d6ca8f4a4c2a37bfafa2480aa6830fae)
    +
    [`f6b68aa6`](https://stellar.expert/explorer/testnet/tx/f6b68aa660f74292a4fafe7f5ada9ace97e56c484e92fcb051566e8b0e6ca14e)
-   — still in range, holdings drift 1,276 / 1,228 →
-   `rebal_06_tick600_drifting.png`
+   — still in range, holdings drift 1,276 / 1,228:
+
+   ![tick 600](video/shots/rebal_06_tick600_drifting.png)
 6. tick 1550 / XLM 0.4671:
    [`794b8df5`](https://stellar.expert/explorer/testnet/tx/794b8df525094ec581e6f79c00b2a7798568fde802cd36ba6d6193c43acf179b)
    +
    [`72c00253`](https://stellar.expert/explorer/testnet/tx/72c00253fca3b9966f91df7b36791ee777e15bbee162d9b8388a91ea606889b1)
    — past the +1500 edge → OUT OF RANGE, holdings 0 XLM / 1,770 USDC
-   (fully flipped) → `rebal_07_tick1550_oor.png`
+   (fully flipped):
+
+   ![tick 1550 OOR](video/shots/rebal_07_tick1550_oor.png)
 7. tick 2300 / XLM 0.5034:
    [`a5c0f075`](https://stellar.expert/explorer/testnet/tx/a5c0f075a14c7cae6b0a7c0f50ffee8e0de8b8066ce5ae1c5c92b891e23c5e9a)
    +
    [`3e4bae98`](https://stellar.expert/explorer/testnet/tx/3e4bae9860ba5d4f1f159782042244feb3d9a98897254f455921f986680a8cf5)
-   — every charted band out of range → `rebal_08_tick2300_all_oor.png`
+   — every charted band out of range:
+
+   ![all OOR](video/shots/rebal_08_tick2300_all_oor.png)
 
 **Phase 3 — keeper rebalance.** `harvest` with SwapPlan
 `ref_tick=2300, new_range=[800,3800]` plus a swap leg (7e9 USDC →
-13.5e9 XLM at oracle-validated `out_min`): unwind → swap → redeploy →
-`PPos` storage write `{tick_lower: 800, tick_upper: 3800}` —
-[`4bfe5b1e`](https://stellar.expert/explorer/testnet/tx/4bfe5b1eccdab6092068c2e1818c038de161809ee6c9fc5f3e2ff38007a1a1ed)
-→ `rebal_09_rebalanced_800_3800.png` (back IN RANGE, holdings
-1,738 XLM / 875 USDC). Explorer shots: `rebal_10_keeper_harvest_tx.png`,
-`rebal_11_keeper_tx_expanded.png`.
+13.5e9 XLM at oracle-validated `out_min`):
+
+8. unwind → swap → redeploy → `PPos` storage write
+   `{tick_lower: 800, tick_upper: 3800}` —
+   [`4bfe5b1e`](https://stellar.expert/explorer/testnet/tx/4bfe5b1eccdab6092068c2e1818c038de161809ee6c9fc5f3e2ff38007a1a1ed)
+   → back IN RANGE, holdings 1,738 XLM / 875 USDC:
+
+   ![rebalanced](video/shots/rebal_09_rebalanced_800_3800.png)
+
+   On-chain evidence of the same tx — the keeper call, nested
+   unwind/swap/redeploy trace, `Rebalance` event, and the
+   `PPos {800, 3800}` storage write:
+
+   ![keeper tx](video/shots/rebal_10_keeper_harvest_tx.png)
+   ![keeper tx expanded](video/shots/rebal_11_keeper_tx_expanded.png)
 
 ### Previous vault (v3 — SUPERSEDED, broken on shared mock)
 

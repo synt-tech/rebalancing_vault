@@ -7,7 +7,7 @@ addresses and tx hashes are in [`../DEPLOYMENTS.md`](../DEPLOYMENTS.md).
 
 ```bash
 cd contracts
-cargo test -p cl_aquarius_strategy          # strategy suite (18 tests)
+cargo test -p cl_aquarius_strategy          # strategy suite (28 tests + 1 fork)
 cargo test -p platform                      # deployment-path suite (2 tests)
 cargo test -p defindex-vault                # patched vault suite (run inside ../defindex clone)
 cargo build --target wasm32v1-none --release --workspace

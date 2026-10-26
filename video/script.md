@@ -23,10 +23,11 @@ earns nothing — while holding only the losing token.
 
 ## 2. Solution
 shot: 02_solution.png
-dur: 11
-caption: Deposit USDC. The vault does the rest.
-voice: clUSDC is a share-token vault on DeFindex. Deposit USDC, and the
-vault manages the Aquarius concentrated position for you.
+dur: 12
+caption: Deposit either pool token. The vault does the rest.
+voice: clUSDC is a share-token vault on DeFindex. Deposit either pool
+token — the vault swaps it into place for you — and the strategy manages
+the Aquarius concentrated position.
 
 ## 3. Architecture
 shot: 03_architecture.png
@@ -39,9 +40,10 @@ Reflector oracle refereeing every single swap.
 ## 4. Walkthrough — deposit
 shot: 04_deposit.png
 dur: 13
-caption: One transaction in: USDC in, vault shares out
-voice: Here is what using it looks like. Connect, deposit USDC, receive
-vault shares — one transaction. No ranges to pick, no bundles to sign.
+caption: One transaction in: either pool token in, vault shares out
+voice: Here is what using it looks like. Connect, deposit either pool
+token, receive vault shares — one atomic transaction, swap included.
+No ranges to pick, no bundles to sign.
 
 ## 5. Managed position
 shot: 05_position.png
@@ -53,10 +55,10 @@ inside on-chain policy limits.
 
 ## 6. Walkthrough — withdraw
 shot: 06_withdraw.png
-dur: 9
-caption: One transaction out: pro-rata unwind to USDC
-voice: One transaction out. The position unwinds pro-rata and delivers
-USDC straight back to the depositor.
+dur: 10
+caption: One transaction out: unwind to either or both tokens
+voice: One transaction out. The position unwinds and delivers value
+straight back — in either or both pool tokens, your pick.
 
 ## 7. Testnet proof
 shot: 07_deployments.png

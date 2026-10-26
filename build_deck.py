@@ -313,6 +313,14 @@ def main():
                     if f["color"]:
                         run.font.color.rgb = f["color"]
 
+        if key == "composed":
+            shot = ROOT / "assets/composed_figure.png"
+            if shot.exists():
+                w = 7.6
+                slide.shapes.add_picture(str(shot), IN(11.6), IN(3.9),
+                                         width=IN(w),
+                                         height=IN(w * 1100 / 1700))
+
     prs.save(OUT)
     print(f"{OUT}  {OUT.stat().st_size / 1e6:.2f} MB, {len(prs.slides.__iter__.__self__._sldIdLst)} slides")
     # simpler slide count:

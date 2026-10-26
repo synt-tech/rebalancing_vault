@@ -38,8 +38,8 @@ pub fn cdiv_u(a: u128, b: u128) -> Result<u128, StrategyError> {
 /// at init (`OracleOf`/`OracleAssetOf`), else the default `DataKey::Oracle`
 /// under `Stellar(asset)`.
 pub fn oracle_price(e: &Env, asset: &Address, p: &Policy) -> Result<i128, StrategyError> {
-    let oracle: Address = get_opt(e, &DataKey::OracleOf(asset.clone()))
-        .unwrap_or_else(|| get(e, &DataKey::Oracle));
+    let oracle: Address =
+        get_opt(e, &DataKey::OracleOf(asset.clone())).unwrap_or_else(|| get(e, &DataKey::Oracle));
     let aid: OracleAsset = get_opt(e, &DataKey::OracleAssetOf(asset.clone()))
         .unwrap_or_else(|| OracleAsset::Stellar(asset.clone()));
     let pd = ReflectorClient::new(e, &oracle)
@@ -73,7 +73,9 @@ pub fn check_oracle_band(
     p: &Policy,
 ) -> Result<(), StrategyError> {
     let slot0 = pool.get_slot0();
-    let spot = spot_price_1e14(e, &slot0.sqrt_price_x96).to_u128().unwrap_or(0);
+    let spot = spot_price_1e14(e, &slot0.sqrt_price_x96)
+        .to_u128()
+        .unwrap_or(0);
     let p0 = oracle_price(e, token0, p)? as u128;
     let p1 = oracle_price(e, token1, p)? as u128;
     if p1 == 0 {
@@ -138,14 +140,29 @@ pub fn compute_balance(
     let mut v1: i128 = 0;
     if let Some(pos) = pos {
         if pos.liquidity > 0 {
-            let est = pool.estimate_withdraw_position(&me, &pos.tick_lower, &pos.tick_upper, &pos.liquidity);
-            v0 = cadd(v0, i128::try_from(est.get(0).unwrap_or(0)).map_err(|_| StrategyError::UnderflowOverflow)?)?;
-            v1 = cadd(v1, i128::try_from(est.get(1).unwrap_or(0)).map_err(|_| StrategyError::UnderflowOverflow)?)?;
+            let est = pool.estimate_withdraw_position(
+                &me,
+                &pos.tick_lower,
+                &pos.tick_upper,
+                &pos.liquidity,
+            );
+            v0 = cadd(
+                v0,
+                i128::try_from(est.get(0).unwrap_or(0))
+                    .map_err(|_| StrategyError::UnderflowOverflow)?,
+            )?;
+            v1 = cadd(
+                v1,
+                i128::try_from(est.get(1).unwrap_or(0))
+                    .map_err(|_| StrategyError::UnderflowOverflow)?,
+            )?;
             // uncollected LP fees net of the performance fee
             let fees = pool.get_position_fees(&me, &pos.tick_lower, &pos.tick_upper);
             let keep = csub(BPS, p.perf_fee_bps as i128)?;
-            let f0 = i128::try_from(fees.get(0).unwrap_or(0)).map_err(|_| StrategyError::UnderflowOverflow)?;
-            let f1 = i128::try_from(fees.get(1).unwrap_or(0)).map_err(|_| StrategyError::UnderflowOverflow)?;
+            let f0 = i128::try_from(fees.get(0).unwrap_or(0))
+                .map_err(|_| StrategyError::UnderflowOverflow)?;
+            let f1 = i128::try_from(fees.get(1).unwrap_or(0))
+                .map_err(|_| StrategyError::UnderflowOverflow)?;
             v0 = cadd(v0, cdiv(cmul(f0, keep)?, BPS)?)?;
             v1 = cadd(v1, cdiv(cmul(f1, keep)?, BPS)?)?;
         }
@@ -165,7 +182,13 @@ pub fn compute_balance(
 /// Accrue a performance fee on `income` (in `token`) into `fees_owed`.
 /// Rounding: fee rounds down in depositors' favour; platform share floors,
 /// operator takes the remainder so legs sum exactly.
-pub fn skim(e: &Env, token: &Address, income: u128, source: Symbol, p: &Policy) -> Result<(), StrategyError> {
+pub fn skim(
+    e: &Env,
+    token: &Address,
+    income: u128,
+    source: Symbol,
+    p: &Policy,
+) -> Result<(), StrategyError> {
     if income == 0 || p.perf_fee_bps == 0 {
         return Ok(());
     }
@@ -195,14 +218,22 @@ pub fn add_owed(e: &Env, role: Role, token: &Address, amt: i128) {
 }
 
 pub fn owed(e: &Env, role: Role, token: &Address) -> i128 {
-    e.storage().instance().get(&DataKey::FeesOwed(role, token.clone())).unwrap_or(0)
+    e.storage()
+        .instance()
+        .get(&DataKey::FeesOwed(role, token.clone()))
+        .unwrap_or(0)
 }
 
 /// Validate a keeper-supplied plan against Policy. Executes nothing.
 /// Every swap leg's `out_min` is re-derived from the oracle, never trusted
 /// from the keeper, and the new range centre must stay inside `tick_cap_bps`
 /// of the keeper-provided `ref_tick`.
-pub fn validate_plan(e: &Env, plan: &SwapPlan, p: &Policy, spacing: i32) -> Result<(), StrategyError> {
+pub fn validate_plan(
+    e: &Env,
+    plan: &SwapPlan,
+    p: &Policy,
+    spacing: i32,
+) -> Result<(), StrategyError> {
     if plan.expiry < e.ledger().timestamp() {
         return Err(StrategyError::DeadlineExpired);
     }
@@ -217,7 +248,9 @@ pub fn validate_plan(e: &Env, plan: &SwapPlan, p: &Policy, spacing: i32) -> Resu
         let pool = ClPoolClient::new(e, &s.pool);
         let tokens = pool.get_tokens();
         let in_tok = tokens.get(s.in_idx).ok_or(StrategyError::InvalidArgument)?;
-        let out_tok = tokens.get(s.out_idx).ok_or(StrategyError::InvalidArgument)?;
+        let out_tok = tokens
+            .get(s.out_idx)
+            .ok_or(StrategyError::InvalidArgument)?;
         let p_in = oracle_price(e, &in_tok, p)?;
         let p_out = oracle_price(e, &out_tok, p)?;
         if p_in <= 0 || p_out <= 0 {
@@ -243,7 +276,12 @@ pub fn validate_plan(e: &Env, plan: &SwapPlan, p: &Policy, spacing: i32) -> Resu
             return Err(StrategyError::InvalidArgument);
         }
         let center = tl.checked_add(tu).ok_or(StrategyError::InvalidArgument)? / 2;
-        if center.checked_sub(plan.ref_tick).ok_or(StrategyError::InvalidArgument)?.abs() > p.tick_cap_bps as i32 {
+        if center
+            .checked_sub(plan.ref_tick)
+            .ok_or(StrategyError::InvalidArgument)?
+            .abs()
+            > p.tick_cap_bps as i32
+        {
             return Err(StrategyError::InvalidArgument);
         }
     }

@@ -106,7 +106,10 @@ pub fn get<T: soroban_sdk::TryFromVal<Env, soroban_sdk::Val>>(e: &Env, k: &DataK
     e.storage().instance().get(k).unwrap()
 }
 
-pub fn get_opt<T: soroban_sdk::TryFromVal<Env, soroban_sdk::Val>>(e: &Env, k: &DataKey) -> Option<T> {
+pub fn get_opt<T: soroban_sdk::TryFromVal<Env, soroban_sdk::Val>>(
+    e: &Env,
+    k: &DataKey,
+) -> Option<T> {
     e.storage().instance().get(k)
 }
 

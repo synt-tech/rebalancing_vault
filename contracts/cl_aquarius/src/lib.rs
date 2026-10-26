@@ -17,7 +17,10 @@
 //! - Rewards opt-in (`set_rewards_state`) is set at init; `claim` returns the
 //!   claimed amount, converted to pool tokens at harvest before the fee cut.
 #![no_std]
-use soroban_sdk::{contract, contractimpl, token::TokenClient, xdr::FromXdr, Address, Bytes, Env, IntoVal, Symbol, TryFromVal, Vec};
+use soroban_sdk::{
+    contract, contractimpl, token::TokenClient, xdr::FromXdr, Address, Bytes, Env, IntoVal, Symbol,
+    TryFromVal, Vec,
+};
 
 pub mod cl_core;
 pub mod clients;
@@ -60,8 +63,7 @@ fn require_keeper(e: &Env, from: &Address, vault: &Address) -> Result<(), Strate
         .and_then(|r| r.ok())
         .map(|m| m == *from)
         .unwrap_or(false)
-        || v
-            .try_get_manager()
+        || v.try_get_manager()
             .ok()
             .and_then(|r| r.ok())
             .map(|m| m == *from)
@@ -142,7 +144,12 @@ impl DeFindexStrategyTrait for ClAquarius {
         TokenClient::new(&e, &asset).transfer(&from, &me, &amount);
         // collect + skim accrued LP fees so deposit pricing is fair
         claim_and_skim_lp_fees(&e, &pool_addr, &policy);
-        event::emit_deposit(&e, soroban_sdk::String::from_str(&e, STRATEGY_NAME), amount, from);
+        event::emit_deposit(
+            &e,
+            soroban_sdk::String::from_str(&e, STRATEGY_NAME),
+            amount,
+            from,
+        );
         compute_balance_now(&e, &pool_addr, &asset, &policy)
     }
 
@@ -178,8 +185,14 @@ impl DeFindexStrategyTrait for ClAquarius {
                     .saturating_div(total)
                     .min(pos.liquidity as i128) as u128;
                 if liq_out > 0 {
-                    let est = pool.estimate_withdraw_position(&me, &pos.tick_lower, &pos.tick_upper, &liq_out);
-                    let keep = u128::try_from(csub(BPS, policy.max_slippage_bps as i128)?).map_err(|_| StrategyError::UnderflowOverflow)?;
+                    let est = pool.estimate_withdraw_position(
+                        &me,
+                        &pos.tick_lower,
+                        &pos.tick_upper,
+                        &liq_out,
+                    );
+                    let keep = u128::try_from(csub(BPS, policy.max_slippage_bps as i128)?)
+                        .map_err(|_| StrategyError::UnderflowOverflow)?;
                     let mins = soroban_sdk::vec![
                         &e,
                         cdiv_u(cmul_u(est.get(0).unwrap_or(0), keep)?, BPS as u128)?,
@@ -187,7 +200,10 @@ impl DeFindexStrategyTrait for ClAquarius {
                     ];
                     pool.withdraw_position(&me, &pos.tick_lower, &pos.tick_upper, &liq_out, &mins);
                     let mut p = pos.clone();
-                    p.liquidity = p.liquidity.checked_sub(liq_out).ok_or(StrategyError::UnderflowOverflow)?;
+                    p.liquidity = p
+                        .liquidity
+                        .checked_sub(liq_out)
+                        .ok_or(StrategyError::UnderflowOverflow)?;
                     if p.liquidity == 0 {
                         e.storage().instance().remove(&DataKey::Position);
                     } else {
@@ -221,11 +237,27 @@ impl DeFindexStrategyTrait for ClAquarius {
                 } else {
                     cdiv(cmul(swap_in, ref_px)?, cl_core::ORACLE_SCALE)?
                 };
-                let out_min = cdiv(cmul(gross, csub(BPS, policy.max_slippage_bps as i128)?)?, BPS)?;
-                let (in_idx, out_idx) = if asset_is_0 { (1u32, 0u32) } else { (0u32, 1u32) };
+                let out_min = cdiv(
+                    cmul(gross, csub(BPS, policy.max_slippage_bps as i128)?)?,
+                    BPS,
+                )?;
+                let (in_idx, out_idx) = if asset_is_0 {
+                    (1u32, 0u32)
+                } else {
+                    (0u32, 1u32)
+                };
                 authorize_pull(&e, foreign, &pool_addr, swap_in);
-                let got = pool.swap(&me, &in_idx, &out_idx, &(swap_in as u128), &(out_min as u128));
-                delivered = cadd(delivered, i128::try_from(got).map_err(|_| StrategyError::UnderflowOverflow)?)?;
+                let got = pool.swap(
+                    &me,
+                    &in_idx,
+                    &out_idx,
+                    &(swap_in as u128),
+                    &(out_min as u128),
+                );
+                delivered = cadd(
+                    delivered,
+                    i128::try_from(got).map_err(|_| StrategyError::UnderflowOverflow)?,
+                )?;
             }
         }
         delivered = delivered.min(amount);
@@ -233,7 +265,12 @@ impl DeFindexStrategyTrait for ClAquarius {
             return Err(StrategyError::InsufficientBalance);
         }
         TokenClient::new(&e, &asset).transfer(&me, &to, &delivered);
-        event::emit_withdraw(&e, soroban_sdk::String::from_str(&e, STRATEGY_NAME), delivered, to);
+        event::emit_withdraw(
+            &e,
+            soroban_sdk::String::from_str(&e, STRATEGY_NAME),
+            delivered,
+            to,
+        );
         Ok(delivered)
     }
 
@@ -243,7 +280,11 @@ impl DeFindexStrategyTrait for ClAquarius {
         require_keeper(&e, &from, &vault)?;
 
         let now = e.ledger().timestamp();
-        let last: u64 = e.storage().instance().get(&DataKey::LastHarvest).unwrap_or(0);
+        let last: u64 = e
+            .storage()
+            .instance()
+            .get(&DataKey::LastHarvest)
+            .unwrap_or(0);
         if last != 0 && now < last + policy.cooldown_secs {
             return Err(StrategyError::NotAuthorized);
         }
@@ -277,7 +318,13 @@ impl DeFindexStrategyTrait for ClAquarius {
         all.push_back(0);
         if let Some(pos) = get_opt::<Position>(&e, &DataKey::Position) {
             if pos.liquidity > 0 {
-                all = pool.withdraw_position(&me, &pos.tick_lower, &pos.tick_upper, &pos.liquidity, &soroban_sdk::vec![&e, 0, 0]);
+                all = pool.withdraw_position(
+                    &me,
+                    &pos.tick_lower,
+                    &pos.tick_upper,
+                    &pos.liquidity,
+                    &soroban_sdk::vec![&e, 0, 0],
+                );
                 e.storage().instance().remove(&DataKey::Position);
             }
         }
@@ -313,7 +360,15 @@ impl DeFindexStrategyTrait for ClAquarius {
                     &0u128,
                 );
                 let _ = used;
-                set(&e, &DataKey::Position, &Position { tick_lower: tl, tick_upper: tu, liquidity: liq });
+                set(
+                    &e,
+                    &DataKey::Position,
+                    &Position {
+                        tick_lower: tl,
+                        tick_upper: tu,
+                        liquidity: liq,
+                    },
+                );
             }
         }
 
@@ -326,9 +381,20 @@ impl DeFindexStrategyTrait for ClAquarius {
         set(&e, &DataKey::LastBalance, &new_bal);
         e.events().publish(
             (Symbol::new(&e, "Rebalance"),),
-            (from.clone(), plan.steps.len(), plan.new_range.tick_lower, plan.new_range.tick_upper),
+            (
+                from.clone(),
+                plan.steps.len(),
+                plan.new_range.tick_lower,
+                plan.new_range.tick_upper,
+            ),
         );
-        event::emit_harvest(&e, soroban_sdk::String::from_str(&e, STRATEGY_NAME), 0i128, from, 0i128);
+        event::emit_harvest(
+            &e,
+            soroban_sdk::String::from_str(&e, STRATEGY_NAME),
+            0i128,
+            from,
+            0i128,
+        );
         Ok(())
     }
 
@@ -345,7 +411,11 @@ impl DeFindexStrategyTrait for ClAquarius {
             }
             // balance() must not panic — fall back to last computed value on
             // transient oracle failure.
-            Err(_) => Ok(e.storage().instance().get(&DataKey::LastBalance).unwrap_or(0)),
+            Err(_) => Ok(e
+                .storage()
+                .instance()
+                .get(&DataKey::LastBalance)
+                .unwrap_or(0)),
         }
     }
 }
@@ -370,15 +440,26 @@ impl ClAquarius {
     /// Pull payout of accrued fees. `role` 0=Platform, 1=Operator.
     /// Permissionless trigger: recipients are resolved at payout time
     /// (platform → registry treasury; operator → vault fee receiver).
-    pub fn claim_fees(e: Env, caller: Address, role: u32, token: Address) -> Result<i128, StrategyError> {
+    pub fn claim_fees(
+        e: Env,
+        caller: Address,
+        role: u32,
+        token: Address,
+    ) -> Result<i128, StrategyError> {
         extend_ttl(&e);
         let _ = caller;
         let (vault, ..) = require_init(&e)?;
         let registry: Address = get(&e, &DataKey::Registry);
         let (r, dest) = if role == 0 {
-            (Role::Platform, RegistryClient::new(&e, &registry).treasury())
+            (
+                Role::Platform,
+                RegistryClient::new(&e, &registry).treasury(),
+            )
         } else {
-            (Role::Operator, VaultClient::new(&e, &vault).get_fee_receiver())
+            (
+                Role::Operator,
+                VaultClient::new(&e, &vault).get_fee_receiver(),
+            )
         };
         let k = DataKey::FeesOwed(r, token.clone());
         let amt: i128 = e.storage().instance().get(&k).unwrap_or(0);
@@ -387,10 +468,8 @@ impl ClAquarius {
         }
         e.storage().instance().set(&k, &0i128);
         TokenClient::new(&e, &token).transfer(&e.current_contract_address(), &dest, &amt);
-        e.events().publish(
-            (Symbol::new(&e, "FeePaid"),),
-            (role, dest, token, amt),
-        );
+        e.events()
+            .publish((Symbol::new(&e, "FeePaid"),), (role, dest, token, amt));
         Ok(amt)
     }
 
@@ -401,8 +480,17 @@ impl ClAquarius {
         let (vault, _, pool_addr, policy) = require_init(&e)?;
         caller.require_auth();
         let v = VaultClient::new(&e, &vault);
-        let ok = v.try_get_emergency_manager().ok().and_then(|r| r.ok()).map(|m| m == caller).unwrap_or(false)
-            || v.try_get_manager().ok().and_then(|r| r.ok()).map(|m| m == caller).unwrap_or(false);
+        let ok = v
+            .try_get_emergency_manager()
+            .ok()
+            .and_then(|r| r.ok())
+            .map(|m| m == caller)
+            .unwrap_or(false)
+            || v.try_get_manager()
+                .ok()
+                .and_then(|r| r.ok())
+                .map(|m| m == caller)
+                .unwrap_or(false);
         if !ok {
             return Err(StrategyError::NotAuthorized);
         }
@@ -411,7 +499,13 @@ impl ClAquarius {
         let me = e.current_contract_address();
         if let Some(pos) = get_opt::<Position>(&e, &DataKey::Position) {
             if pos.liquidity > 0 {
-                pool.withdraw_position(&me, &pos.tick_lower, &pos.tick_upper, &pos.liquidity, &soroban_sdk::vec![&e, 0, 0]);
+                pool.withdraw_position(
+                    &me,
+                    &pos.tick_lower,
+                    &pos.tick_upper,
+                    &pos.liquidity,
+                    &soroban_sdk::vec![&e, 0, 0],
+                );
                 e.storage().instance().remove(&DataKey::Position);
             }
         }
@@ -424,8 +518,17 @@ impl ClAquarius {
         let (vault, ..) = require_init(&e)?;
         caller.require_auth();
         let v = VaultClient::new(&e, &vault);
-        let ok = v.try_get_rebalance_manager().ok().and_then(|r| r.ok()).map(|m| m == caller).unwrap_or(false)
-            || v.try_get_manager().ok().and_then(|r| r.ok()).map(|m| m == caller).unwrap_or(false);
+        let ok = v
+            .try_get_rebalance_manager()
+            .ok()
+            .and_then(|r| r.ok())
+            .map(|m| m == caller)
+            .unwrap_or(false)
+            || v.try_get_manager()
+                .ok()
+                .and_then(|r| r.ok())
+                .map(|m| m == caller)
+                .unwrap_or(false);
         if !ok {
             return Err(StrategyError::NotAuthorized);
         }
@@ -454,12 +557,7 @@ fn authorize_pull(e: &Env, token: &Address, callee: &Address, amount: i128) {
                 context: soroban_sdk::auth::ContractContext {
                     contract: token.clone(),
                     fn_name: Symbol::new(e, "transfer"),
-                    args: (
-                        e.current_contract_address(),
-                        callee.clone(),
-                        amount,
-                    )
-                        .into_val(e),
+                    args: (e.current_contract_address(), callee.clone(), amount,).into_val(e),
                 },
                 sub_invocations: soroban_sdk::vec![&e],
             },
@@ -475,8 +573,22 @@ fn claim_and_skim_lp_fees(e: &Env, pool_addr: &Address, policy: &Policy) {
             let got = pool.claim_position_fees(&me, &pos.tick_lower, &pos.tick_upper);
             if let Some(tokens) = pool.try_get_tokens().ok().and_then(|r| r.ok()) {
                 let source = Symbol::new(e, "lp_fees");
-                skim(e, &tokens.get(0).unwrap(), got.get(0).unwrap_or(0), source.clone(), policy).ok();
-                skim(e, &tokens.get(1).unwrap(), got.get(1).unwrap_or(0), source, policy).ok();
+                skim(
+                    e,
+                    &tokens.get(0).unwrap(),
+                    got.get(0).unwrap_or(0),
+                    source.clone(),
+                    policy,
+                )
+                .ok();
+                skim(
+                    e,
+                    &tokens.get(1).unwrap(),
+                    got.get(1).unwrap_or(0),
+                    source,
+                    policy,
+                )
+                .ok();
             }
         }
     }
@@ -487,7 +599,12 @@ fn claim_and_skim_lp_fees(e: &Env, pool_addr: &Address, policy: &Policy) {
 /// swap output. The `min_reward_swap` dust gate runs BEFORE claiming —
 /// below-threshold rewards stay unclaimed in the pool (not stranded as
 /// unvalued dust in strategy custody) and keep accruing until worth a swap.
-fn claim_and_convert_rewards(e: &Env, pool_addr: &Address, asset: &Address, policy: &Policy) -> Result<(), StrategyError> {
+fn claim_and_convert_rewards(
+    e: &Env,
+    pool_addr: &Address,
+    asset: &Address,
+    policy: &Policy,
+) -> Result<(), StrategyError> {
     let pool = ClPoolClient::new(e, pool_addr);
     let me = e.current_contract_address();
     let pending = pool.get_user_reward(&me) as i128;
@@ -520,13 +637,27 @@ fn claim_and_convert_rewards(e: &Env, pool_addr: &Address, asset: &Address, poli
     let p_out = oracle_price(e, &out_tok, policy)?;
     // oracle-derived min-out (equal token decimals assumed, see balance())
     let fair_out = cdiv(cmul(claimed, p_rew)?, p_out)?;
-    let out_min = cdiv(cmul(fair_out, csub(BPS, policy.max_slippage_bps as i128)?)?, BPS)?;
+    let out_min = cdiv(
+        cmul(fair_out, csub(BPS, policy.max_slippage_bps as i128)?)?,
+        BPS,
+    )?;
     authorize_pull(e, &reward_tok, &reward_pool_addr, claimed);
-    let got_u = rp.swap(&me, &in_idx, &out_idx, &(claimed as u128), &(out_min as u128));
+    let got_u = rp.swap(
+        &me,
+        &in_idx,
+        &out_idx,
+        &(claimed as u128),
+        &(out_min as u128),
+    );
     skim(e, &out_tok, got_u, Symbol::new(e, "rewards"), policy)
 }
 
-fn compute_balance_now(e: &Env, pool_addr: &Address, asset: &Address, policy: &Policy) -> Result<i128, StrategyError> {
+fn compute_balance_now(
+    e: &Env,
+    pool_addr: &Address,
+    asset: &Address,
+    policy: &Policy,
+) -> Result<i128, StrategyError> {
     let pool = ClPoolClient::new(e, pool_addr);
     let tokens = pool.get_tokens();
     let pos: Option<Position> = get_opt(e, &DataKey::Position);
@@ -543,8 +674,17 @@ fn compute_balance_now(e: &Env, pool_addr: &Address, asset: &Address, policy: &P
 
 /// Track cumulative rebalance loss vs the loss window budget.
 /// LossTracker = (window_start, loss_bps_used).
-fn check_loss_budget(e: &Env, new_bal: i128, policy: &Policy, now: u64) -> Result<(), StrategyError> {
-    let prev: i128 = e.storage().instance().get(&DataKey::LastBalance).unwrap_or(new_bal);
+fn check_loss_budget(
+    e: &Env,
+    new_bal: i128,
+    policy: &Policy,
+    now: u64,
+) -> Result<(), StrategyError> {
+    let prev: i128 = e
+        .storage()
+        .instance()
+        .get(&DataKey::LastBalance)
+        .unwrap_or(new_bal);
     if new_bal >= prev || prev <= 0 {
         return Ok(());
     }
@@ -554,8 +694,14 @@ fn check_loss_budget(e: &Env, new_bal: i128, policy: &Policy, now: u64) -> Resul
         .instance()
         .get(&DataKey::LossTracker)
         .unwrap_or((now, 0));
-    let window_end = w_start.checked_add(policy.loss_window_secs).ok_or(StrategyError::UnderflowOverflow)?;
-    let (ws, mut u) = if now >= window_end { (now, 0) } else { (w_start, used) };
+    let window_end = w_start
+        .checked_add(policy.loss_window_secs)
+        .ok_or(StrategyError::UnderflowOverflow)?;
+    let (ws, mut u) = if now >= window_end {
+        (now, 0)
+    } else {
+        (w_start, used)
+    };
     u = cadd(u, loss_bps)?;
     if u > policy.max_loss_bps_per_window as i128 {
         return Err(StrategyError::NotAuthorized);

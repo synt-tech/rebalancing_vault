@@ -29,14 +29,50 @@ pub struct PositionData {
 pub trait ClPool {
     fn get_slot0(env: Env) -> Slot0;
     fn get_tokens(env: Env) -> Vec<Address>;
-    fn get_position(env: Env, recipient: Address, tick_lower: i32, tick_upper: i32) -> PositionData;
+    fn get_position(env: Env, recipient: Address, tick_lower: i32, tick_upper: i32)
+        -> PositionData;
     fn get_position_fees(env: Env, owner: Address, tick_lower: i32, tick_upper: i32) -> Vec<u128>;
-    fn claim_position_fees(env: Env, owner: Address, tick_lower: i32, tick_upper: i32) -> Vec<u128>;
-    fn estimate_withdraw_position(env: Env, owner: Address, tick_lower: i32, tick_upper: i32, amount: u128) -> Vec<u128>;
-    fn withdraw_position(env: Env, owner: Address, tick_lower: i32, tick_upper: i32, amount: u128, min_amounts: Vec<u128>) -> Vec<u128>;
-    fn deposit_position(env: Env, sender: Address, tick_lower: i32, tick_upper: i32, desired_amounts: Vec<u128>, min_liquidity: u128) -> (Vec<u128>, u128);
-    fn swap(env: Env, user: Address, in_idx: u32, out_idx: u32, in_amount: u128, out_min: u128) -> u128;
-    fn swap_strict_receive(env: Env, user: Address, in_idx: u32, out_idx: u32, out_amount: u128, in_max: u128) -> u128;
+    fn claim_position_fees(env: Env, owner: Address, tick_lower: i32, tick_upper: i32)
+        -> Vec<u128>;
+    fn estimate_withdraw_position(
+        env: Env,
+        owner: Address,
+        tick_lower: i32,
+        tick_upper: i32,
+        amount: u128,
+    ) -> Vec<u128>;
+    fn withdraw_position(
+        env: Env,
+        owner: Address,
+        tick_lower: i32,
+        tick_upper: i32,
+        amount: u128,
+        min_amounts: Vec<u128>,
+    ) -> Vec<u128>;
+    fn deposit_position(
+        env: Env,
+        sender: Address,
+        tick_lower: i32,
+        tick_upper: i32,
+        desired_amounts: Vec<u128>,
+        min_liquidity: u128,
+    ) -> (Vec<u128>, u128);
+    fn swap(
+        env: Env,
+        user: Address,
+        in_idx: u32,
+        out_idx: u32,
+        in_amount: u128,
+        out_min: u128,
+    ) -> u128;
+    fn swap_strict_receive(
+        env: Env,
+        user: Address,
+        in_idx: u32,
+        out_idx: u32,
+        out_amount: u128,
+        in_max: u128,
+    ) -> u128;
     fn estimate_swap(env: Env, in_idx: u32, out_idx: u32, in_amount: u128) -> u128;
     fn get_user_reward(env: Env, user: Address) -> u128;
     fn claim(env: Env, user: Address) -> u128;

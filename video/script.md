@@ -13,6 +13,12 @@ One section per `##` heading. Fields per section:
 Rebuild: `./build.py` assembles; `./build.py --tts` (re)generates
 `audio/` from this file first.
 
+## 0. Y.A.R.V.
+shot: 00_title.png
+dur: 6
+caption: concentrated liquidity for the lazy (and everyone else)
+voice: Y.A.R.V. — concentrated liquidity for the lazy, and everyone else.
+
 ## 1. Problem
 shot: 01_problem.png
 dur: 13
@@ -108,6 +114,8 @@ tests and deployment — during the hackathon.
 ## 13. Roadmap
 shot: 09_roadmap.png
 dur: 10
-caption: Next: real pools, strategy templates, third-party strategists
-voice: What is next: wiring real pools, a template library of strategy
-families, and opening the platform to third-party strategists.
+caption: Next: five strategy templates, orderbook vaults, keepers
+voice: What is next: port all five proven rebalancing families as
+templates — re-center, inventory band, peg-anchored, signal-driven,
+no-swap reuse — plus automated market-making vaults on the Axis
+orderbook.

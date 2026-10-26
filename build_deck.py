@@ -126,8 +126,8 @@ CONTENT = {
     "cover": dict(
         pill="STELLAR COMPOSED · MADE TO MOVE",
         title=["Y.A.R.V."],
-        tagline="concentrated liquidity for the lazy (and everyone else)",
-        mid="yet-to-be-named automated rebalancing vaults — live on Stellar testnet",
+        mid="concentrated liquidity for the lazy (and everyone else)",
+        sub="yet-to-be-named automated rebalancing vaults — live on Stellar testnet",
     ),
     "problem": dict(
         title="THE PROBLEM",
@@ -266,18 +266,25 @@ def main():
                 elif "HACKATHON" in t:
                     set_text(sh, c["title"])
                 elif "#HackMeridian26" in t:
-                    set_text(sh, c["tagline"], scale=0.8)
+                    set_text(sh, "#HackMeridian26", scale=0.8)
                 elif "PLATFORM" in t:
                     set_text(sh, f"PLATFORM 01 / {len(KEYS):02d}")
                 elif "October 2026" in t:
                     set_text(sh, "October 2026 · Lisbon")
             if c.get("mid"):
-                sub = slide.shapes.add_textbox(IN(1.05), IN(5.5),
-                                               IN(12.0), IN(0.6))
+                sub = slide.shapes.add_textbox(IN(1.05), IN(5.4),
+                                               IN(12.0), IN(1.4))
                 r0 = sub.text_frame.paragraphs[0].add_run()
                 r0.text = c["mid"]
                 r0.font.size = Pt(26)
                 r0.font.color.rgb = RGBColor(0xFF, 0xD2, 0x3F)
+                if c.get("sub"):
+                    p2 = sub.text_frame.add_paragraph()
+                    p2.space_before = Pt(10)
+                    r1 = p2.add_run()
+                    r1.text = c["sub"]
+                    r1.font.size = Pt(16)
+                    r1.font.color.rgb = RGBColor(0xAA, 0xAA, 0xAA)
             continue
         if "platform" in r:
             set_text(r["platform"], f"PLATFORM {i + 1:02d} / {len(KEYS):02d}")

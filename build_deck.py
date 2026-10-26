@@ -145,8 +145,8 @@ CONTENT = {
         lead="Deposit either pool token, hold shares, withdraw to either or both — one tx each way.",
         body=[
             "The strategy contract owns the Aquarius CL position; a keeper",
-            "harvests inside strict on-chain policy — oracle-checked swaps,",
-            "loss caps, cooldowns.",
+            "automatically rebalances it when price drifts out of range —",
+            "inside strict on-chain policy. You never touch a band again.",
             "Zap-in/out: a deposit accepts either token and a withdraw can",
             "pay out a chosen split — swap+deposit batch atomically, one tx.",
             "LP fees and AQUA rewards compound back into the share price.",

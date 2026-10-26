@@ -255,7 +255,7 @@ route live.
 | `stellar/aquarius_dex/` | `aquarius_client.py`, `rebalance_solver.py`, `backtest_rebalance_policy.py`, pool PnL/cost analyzers, `pool_cache/`, live snapshots |
 | `stellar/aquarius_dex/research/` | CLMM economics literature: LVR σ²/8, width/trigger sweeps, vol-regime experiments (README maps findings → design) |
 | `security/Aquarius-security-review/` | Aquarius `soroban-amm` local working copy (upstream repo private — unmatched-to-deployed reference) |
-| `synt_dex/rocky-rebalancer/` | **rocky-vault prototype** — contract (`contracts/rocky-vault/`), tests, testnet deployment notes (README), pinned reference sources under `reference/` (extracted from `synt_tech_website.zip`; gitignored, regenerable) |
+| `synt_dex/` | **synt_dex rebalancer prototype** — the rebalancing-vault contract, tests, testnet deployment notes, pinned reference sources under `reference/` (extracted from `synt_tech_website.zip`; gitignored, regenerable) |
 | `rebalance_concentrated_positions_wrapper.py` | the manual rebalance flow the vault replaces |
 | `../defindex/` | DeFindex local clone — audited vault + strategy trait (`apps/contracts/strategies/core/`) + Blend/hodl/soroswap example strategies; the share-vault infra we plug into |
 | `reference/vault_docs/defindex/` | DeFindex docs corpus (76 pages): build-a-strategy guide, roles, fees, API |
@@ -278,7 +278,7 @@ route live.
 - [ ] Sushi adapter — how close to Uni-V3 semantics is the deployed pool?
       the prototype's own notes flag NFT positions, oracle hints and a
       different swap ABI as the deltas to resolve; skim `sushi-stellar-*`
-      snapshots under `synt_dex/rocky-rebalancer/reference/` and diff
+      snapshots in the synt_dex extraction's `reference/` and diff
       against Aquarius's documented behavior.
 - [ ] Keeper trigger: subscribe `trade`/`pool_state` events, fire only at
       range exit — vs polling loop.

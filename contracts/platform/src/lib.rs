@@ -183,27 +183,39 @@ impl Platform {
 
     /// Platform emergency ops — the wrapper holds EmergencyManager on every
     /// vault it creates, so it can pause/unwind without the Manager.
+    /// Vault ABI is `(strategy_address, caller)`; `caller.require_auth()`
+    /// inside the vault resolves against the invoker-auth entry we declare
+    /// for the platform itself (same pattern as the `bind_vault` callback).
+    fn call_emergency(e: &Env, vault: &Address, strategy: &Address, fn_name: Symbol) {
+        require_admin(e);
+        let mut args: Vec<Val> = Vec::new(e);
+        args.push_back(strategy.clone().into_val(e));
+        args.push_back(e.current_contract_address().into_val(e));
+        e.authorize_as_current_contract(vec![
+            e,
+            InvokerContractAuthEntry::Contract(SubContractInvocation {
+                context: ContractContext {
+                    contract: vault.clone(),
+                    fn_name: fn_name.clone(),
+                    args: args.clone().into_val(e),
+                },
+                sub_invocations: Vec::new(e),
+            }),
+        ]);
+        e.invoke_contract::<()>(vault, &fn_name, args);
+    }
+
     pub fn pause_strategy(e: Env, vault: Address, strategy: Address) {
-        require_admin(&e);
-        let mut args: Vec<Val> = Vec::new(&e);
-        args.push_back(strategy.into_val(&e));
-        e.invoke_contract::<()>(&vault, &Symbol::new(&e, "pause_strategy"), args);
+        Self::call_emergency(&e, &vault, &strategy, Symbol::new(&e, "pause_strategy"));
     }
 
     pub fn unpause_strategy(e: Env, vault: Address, strategy: Address) {
-        require_admin(&e);
-        let mut args: Vec<Val> = Vec::new(&e);
-        args.push_back(strategy.into_val(&e));
-        e.invoke_contract::<()>(&vault, &Symbol::new(&e, "unpause_strategy"), args);
+        Self::call_emergency(&e, &vault, &strategy, Symbol::new(&e, "unpause_strategy"));
     }
 
     /// Force-unwind a strategy's full balance into vault idle + pause it.
     pub fn rescue_vault(e: Env, vault: Address, strategy: Address) {
-        require_admin(&e);
-        let mut args: Vec<Val> = Vec::new(&e);
-        args.push_back(strategy.into_val(&e));
-        args.push_back(e.current_contract_address().into_val(&e));
-        e.invoke_contract::<()>(&vault, &Symbol::new(&e, "rescue"), args);
+        Self::call_emergency(&e, &vault, &strategy, Symbol::new(&e, "rescue"));
     }
 }
 

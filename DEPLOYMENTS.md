@@ -11,32 +11,70 @@ swap into a real testnet CL pool is a later step.
 |---|---|---|
 | DeFindex factory (our instance) | `CDJ467CMUO6R6BLW4PTSMVEGVTUKVNNSIBFLHMK5Q6GK2WMYEDQTKRTR` | `446f6df3…` |
 | strategy_registry | `CB4LGZVUF345GF5MLMWIZZR2E222SX6DAPQ2DOP3WEKQKBGJRO7I3RES` | `efbf1ff0…` |
-| platform wrapper | `CB74CKXGUTTFP5P3ZEOX3VDR376YJKNLFQ6RKPX6QTEITHNG62D5F6RV` | `8a83f606…` |
+| platform wrapper (v2 — emergency-ops fix) | `CDKAKRSZZB2NTOBSTT2KDEZSSLOZSQ4DKTGP6RGSJXFUUY6ZQ2HZLPGF` | `fcb1611c…` |
+| ~~platform wrapper (v1)~~ superseded | `CB74CKXGUTTFP5P3ZEOX3VDR376YJKNLFQ6RKPX6QTEITHNG62D5F6RV` | `8a83f606…` |
 | null_router | `CDEYX7WBCCSYXOFBMBOCB2WTLLROPQAWS5YQKUTYSDNBPD23EGASH5LQ` | `c0a49523…` |
 | patched vault template | — | `c749c49c…` (installed, deployed per-vault by factory) |
 | cl_aquarius template | — | `ea0f490b…` (installed; `21e4cbfd…`/`b0b3b794…` superseded) |
 
-> **Stale as of SDK 29 migration**: all local WASMs rebuilt under
-> soroban-sdk 29.0.1 — cl_aquarius source now produces `522457f9…`,
-> registry `29b2d56a…`, platform `39abcc38…`, null_router `0738f3c4…`,
-> test_mocks `31df971f…`. The addresses above still run the SDK-22
-> binaries; redeploy before further testnet work.
+> **Strategy redeployed under SDK 29.0.1** (2026-10-26): template
+> `522457f9…2584` installed + registered in the registry alongside
+> `ea0f490b…`; v4 vault below runs it. The platform contracts
+> (factory/registry/platform/null_router) keep their SDK-22 binaries —
+> only formatting changed in source, and cross-contract calls don't care
+> about the callee's SDK version.
+>
+> **Platform v2 (2026-10-26)**: the v1 platform's `pause_strategy` /
+> `unpause_strategy` / `rescue_vault` calls to the vault were missing the
+> `caller` arg (vault ABI is `(strategy, caller)`) and the required
+> invoker-auth declaration — they failed on testnet with
+> `MismatchingParameterLen` and would have failed auth even with the
+> right arity. Fixed in source (`call_emergency` helper), redeployed as
+> `CDKAKRSZ…`; `registry.set_platform` re-pointed (`8aec32db…`) and the
+> v4 vault's EmergencyManager updated via `set_emergency_manager`
+> (`e5040e5d…`). Verified live: pause `7eb70987…`, unpause `586ab9a9…`.
+> The v3 vault still points at the broken v1 platform — superseded anyway.
+>
+> **Shared-mock caveat**: the corrected reference-price convention means
+> the mock pool's spot must be seeded `√(p0/p1)·2⁹⁶` = √0.4·2⁹⁶ —
+> `set_spot` tx `8470de25…`. The v3 vault's strategy (old inverted
+> convention) is incompatible with this spot and can no longer run
+> oracle-gated ops on the shared mock.
 
 Factory init: admin = agent-1, defindex_receiver = agent-1, defindex_fee = 0.
 
-## Current vault (v3, created via `platform.create_vault`)
+## Current vault (v4, created via `platform.create_vault`)
+
+| Role | Address |
+|---|---|
+| Vault (clUSDC4) | `CB77DI4XYWTQTHS5FJWXFFDG5JQJFARP5KKEDM6GGAJ357XC5ZLBFX3V` |
+| Bound cl_aquarius instance | `CABMCEQGTCR7CVEUCQFHP3MFNMLWYH3WUTERVEAKPEHYNOP6U65GFU76` |
+| Strategy template | `522457f9e3ae5777bf7f7d2fbeeb6bf4b2fa5d83ff923130b4aca60b2bb02584` (SDK 29.0.1) |
+| EmergencyManager | platform contract v2 (`CDKAKRSZ…`) — re-pointed via `set_emergency_manager` |
+| Manager / FeeReceiver / RebalanceManager | agent-1 (operator role) |
+| vault_fee | 0 (pinned) · upgradable=false · router=null_router |
+
+Policy: identical to v3 (perf_fee 1500bps, platform_split 5000bps,
+oracle_band 500bps, max_oracle_age 600s, max_slippage 300bps,
+max_loss 200bps/3600s window, cooldown 120s, range 100–2000bps half-width,
+tick_cap 1000bps, reward floor 0.1 AQUA, reward max age 1d) — decoded
+verbatim from the v3 `create_vault` envelope `c0cb28b4…`.
+
+### v4 verified flows (SDK-29 binary)
+
+- `platform.create_vault` → vault+strategy, roles pinned — `6452402f…`
+- `vault.deposit` 10e9 USDC → 9999999000 shares — `334135fa…`
+- `vault.rebalance` Invest 8e9 → strategy pull — `9558f77a…`
+- `harvest` SwapPlan → position deployed ticks **[-1500,1500]** — `f6260f03…`
+- `vault.withdraw` all shares → unwind through the open position →
+  9999999000 delivered — `2107cd79…`
+
+### Previous vault (v3 — SUPERSEDED, broken on shared mock)
 
 | Role | Address |
 |---|---|
 | Vault (clUSDC3) | `CBOOPM4WFKSCXRDYGT5THN3JRKUABUW2VGKURAVDJGCF2GJ2TXU45I6G` |
 | Bound cl_aquarius instance | `CBBG2JYTVJPJO3ZKZZID76GX5VNAMTD4NXNHYHCFI4VBTUUIGRLPD6HE` |
-| EmergencyManager | platform contract (`CB74CKXG…`) — pinned by wrapper |
-| Manager / FeeReceiver / RebalanceManager | agent-1 (operator role) |
-| vault_fee | 0 (pinned) · upgradable=false · router=null_router |
-
-Policy (within registered ceilings): perf_fee 1500bps, platform_split 5000bps,
-oracle_band 500bps, max_oracle_age 600s, max_slippage 300bps,
-max_loss 200bps/3600s window, cooldown 120s, reward floor 0.1 AQUA, reward max age 1d.
 
 ## Test fixtures (mocks — NOT real Aquarius/Reflector)
 
@@ -96,3 +134,6 @@ v3 vault (`CBOOPM4W…`/`CBBG2JYT…`, template ea0f490b — auth fix):
   only real-network calls surface it.
 - Oracle prices age past `max_oracle_age` quickly on testnet — re-seed `set_price`
   before harvest/withdraw runs.
+- The mock pool spot convention is `√(units_token1/token0)·2⁹⁶` — for
+  t0=XLM ($0.4) / t1=USDC ($1.0): `√0.4·2⁹⁶ = 50108289675009587501223378944`.
+  `set_spot` takes the full sqrt_price_x96 numerator (2⁹⁶ already folded in).

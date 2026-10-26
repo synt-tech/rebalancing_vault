@@ -194,6 +194,34 @@ formal verification).
   escalate `Storage MissingValue`→`Abort`. Enumerate externals from the
   target's instance storage before snapshotting.
 
+## Found on testnet — platform emergency-ops bug (fixed, v2 deployed)
+
+- **Bug** — `platform.pause_strategy`/`unpause_strategy`/`rescue_vault`
+  called the vault with `[strategy]` (1 arg) but the vault ABI is
+  `(strategy_address, caller)` — live testnet failure:
+  `WasmVm UnexpectedSize` / `MismatchingParameterLen`. Even at the right
+  arity, `caller.require_auth()` inside `require_any_role` needs the
+  platform to declare the sub-invocation via
+  `authorize_as_current_contract`. Slipped through because no test ever
+  drove the platform→vault emergency path (unit tests exercised
+  `create_vault` only).
+- **Fix** — `call_emergency` helper: `[strategy, platform]` args +
+  `InvokerContractAuthEntry` for the vault call (same pattern as the
+  `bind_vault` callback). Covered by the extended `create_vault` test
+  (pause → unpause → rescue against the real vault WASM).
+- **Deployed** — platform v2 `CDKAKRSZ…` (wasm `fcb1611c…`);
+  `registry.set_platform` re-pointed (`8aec32db…`); v4 vault
+  `set_emergency_manager` (`e5040e5d…`); verified live pause
+  (`7eb70987…`) + unpause (`586ab9a9…`) on testnet.
+- **Auth-model note** — the host also auto-authorizes `require_auth` on
+  the *direct invoker* contract's address (soroban-env-host
+  `maybe_check_invoker_contract_auth`), so the declared entry is
+  belt-and-suspenders for non-direct call paths; the arg fix is the
+  load-bearing change.
+- **Lesson** — every wrapper-level proxy method needs at least one
+  end-to-end exercise against the real callee WASM; mock-auth unit
+  tests cannot catch arity or invoker-auth gaps on their own.
+
 ## Not yet audited
 
 - Real Aquarius testnet pool integration (current smoke env uses mocks).

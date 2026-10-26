@@ -11,13 +11,16 @@ export const expertContractUrl = (c) => `${EXPERT_URL}/contract/${c}`
 // Platform contracts
 export const FACTORY = 'CDJ467CMUO6R6BLW4PTSMVEGVTUKVNNSIBFLHMK5Q6GK2WMYEDQTKRTR'
 export const REGISTRY = 'CB4LGZVUF345GF5MLMWIZZR2E222SX6DAPQ2DOP3WEKQKBGJRO7I3RES'
-export const PLATFORM = 'CB74CKXGUTTFP5P3ZEOX3VDR376YJKNLFQ6RKPX6QTEITHNG62D5F6RV'
+export const PLATFORM = 'CDKAKRSZZB2NTOBSTT2KDEZSSLOZSQ4DKTGP6RGSJXFUUY6ZQ2HZLPGF'
 
-// Live vault (v3, clUSDC3)
+// Live vault (v4, clUSDC4 — SDK-29 template 522457f9, corrected
+// reference-price convention; the mock pool spot is seeded at √0.4·2⁹⁶
+// so the older v3 vault's inverted-convention code is no longer usable
+// on this shared mock).
 export const VAULT = {
-  address: 'CBOOPM4WFKSCXRDYGT5THN3JRKUABUW2VGKURAVDJGCF2GJ2TXU45I6G',
-  strategy: 'CBBG2JYTVJPJO3ZKZZID76GX5VNAMTD4NXNHYHCFI4VBTUUIGRLPD6HE',
-  name: 'clUSDC3',
+  address: 'CB77DI4XYWTQTHS5FJWXFFDG5JQJFARP5KKEDM6GGAJ357XC5ZLBFX3V',
+  strategy: 'CABMCEQGTCR7CVEUCQFHP3MFNMLWYH3WUTERVEAKPEHYNOP6U65GFU76',
+  name: 'clUSDC4',
   depositAsset: 'USDC',
   pair: 'XLM / USDC',
   template: 'cl_band',

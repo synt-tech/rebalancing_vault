@@ -83,6 +83,22 @@ pub struct AssetInvestmentAllocation {
     pub strategy_allocations: Vec<Option<StrategyAllocation>>,
 }
 
+// Vault get_assets return — mirrors defindex common::models.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct VaultStrategy {
+    pub address: Address,
+    pub name: String,
+    pub paused: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AssetStrategySet {
+    pub address: Address,
+    pub strategies: Vec<VaultStrategy>,
+}
+
 #[contractclient(name = "RegistryTestClient")]
 trait RegistryApi {
     fn set_platform(env: Env, platform: Address);
@@ -107,6 +123,7 @@ trait VaultApi {
         invest: bool,
     ) -> (Vec<i128>, i128, Option<Vec<AssetInvestmentAllocation>>);
     fn balance(env: Env, from: Address) -> Vec<i128>;
+    fn get_assets(env: Env) -> Vec<AssetStrategySet>;
 }
 
 #[contractclient(name = "StrategyTestClient")]
@@ -267,6 +284,21 @@ fn create_vault_deploys_binds_and_runs_deposit() {
     assert_eq!(amounts.get(0).unwrap(), 10_000_000_000);
     assert!(shares > 0);
     assert_eq!(TokenClient::new(&e, &usdc).balance(&vault), 10_000_000_000);
+
+    // Emergency ops through the platform: it is the vault's EmergencyManager,
+    // so pause/unpause/rescue must pass the vault's caller.require_auth().
+    platform.pause_strategy(&vault, &strategy);
+    let assets = vault_c.get_assets();
+    assert!(assets.get(0).unwrap().strategies.get(0).unwrap().paused);
+
+    platform.unpause_strategy(&vault, &strategy);
+    let assets = vault_c.get_assets();
+    assert!(!assets.get(0).unwrap().strategies.get(0).unwrap().paused);
+
+    // Nothing invested — rescue leaves funds idle and ends paused.
+    platform.rescue_vault(&vault, &strategy);
+    let assets = vault_c.get_assets();
+    assert!(assets.get(0).unwrap().strategies.get(0).unwrap().paused);
 }
 
 /// Registry rejects a venue not on the allowlist (audit A9).

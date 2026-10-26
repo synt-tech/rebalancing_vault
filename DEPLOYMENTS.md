@@ -75,6 +75,32 @@ verbatim from the v3 `create_vault` envelope `c0cb28b4…`.
 - `vault.withdraw` all shares → unwind through the open position →
   9999999000 delivered — `2107cd79…`
 
+### Rebalance demo arc (2026-10-26) — drift → OOR → keeper moves band
+
+The withdraw-all above left the position as dust (liq 1000), so the vault was
+re-funded for the demo. Prices are moved via mock `set_spot` + matching
+`set_price` (XLM) so spot stays inside the 500 bps oracle band; tick 0 ≡
+0.40 USDC/XLM. Screenshots: `video/shots/rebal_05..09_*.png`.
+
+- refund: `vault.deposit` 15e9 USDC → 15e9 shares — `87b83e52…`
+- `vault.rebalance` Invest 15e9 → strategy pull — `d248872a…`
+- `harvest` SwapPlan ref_tick 0 → re-deployed **[-1500,1500]** — `9e92b3b2…`
+- first drift+rebalance cycle (screenshots discarded — empty-vault arc):
+  ladder 600/1550/2300, harvest → **[800,3800]** with a keeper swap step
+  (7e9 USDC → 13.5e9 XLM, oracle-validated out_min) — `40e41641…`
+- second drift ladder (the photographed arc):
+  tick +3100 = 0.5454 `dfa3edcd…`/`1bb7aa5e…` → tick +3900 = 0.5908
+  `2918ddf6…`/`664097b0…` → tick +4500 = 0.6273 `9981908c…`/`c4dd3bf4…`
+  (position slid OUT OF RANGE past +3800; all charted bands OOR at +4500)
+- keeper `harvest` SwapPlan ref_tick 4500 → unwind + redeploy
+  **[3000,6000]**, position back in range — `210d9091…`
+
+`check_loss_budget` note: the harvest post-check compares the new
+oracle-valued balance against `LastBalance` — a price **rise** on an
+XLM-heavy position counts as gain (always passes), a drop would count as
+loss (max 200 bps/3600 s). Selling the appreciated leg inside the same
+plan locks the gain in numéraire — that's what `40e41641…` did.
+
 ### Previous vault (v3 — SUPERSEDED, broken on shared mock)
 
 | Role | Address |

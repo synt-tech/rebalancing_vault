@@ -34,11 +34,11 @@ export const POOL = 'CCUDORIMXIIJYOYYE5NEFBZ25JSJXNMQDPELGQRRHJY4IYNKBWV7AR5S'
 // (the mock exposes no position enumeration, so the liquidity histogram is
 // built from this list + the live strategy position).
 export const KNOWN_POOL_POSITIONS = [
-  { tick_lower: -2400, tick_upper: -1600, liquidity: 300000000 },
-  { tick_lower: -800, tick_upper: -300, liquidity: 400000000 },
-  { tick_lower: -300, tick_upper: 300, liquidity: 280000000 },
-  { tick_lower: 200, tick_upper: 700, liquidity: 250000000 },
-  { tick_lower: 1200, tick_upper: 2200, liquidity: 150000000 },
+  { tick_lower: -2400, tick_upper: -1600, liquidity: 4200000000 },
+  { tick_lower: -800, tick_upper: -300, liquidity: 5500000000 },
+  { tick_lower: -300, tick_upper: 300, liquidity: 6800000000 },
+  { tick_lower: 200, tick_upper: 700, liquidity: 3800000000 },
+  { tick_lower: 1200, tick_upper: 2200, liquidity: 2600000000 },
 ]
 export const USDC_SAC = 'CBMUABTPC5WH5IRYEQVYTSJ6DSN5SQUK6ROHEXPNDU36V2HHDMRAW7HN'
 export const XLM_SAC = 'CBGYSLZB6NQEWQSDCSYGRPWQQHN7DFYNGRO3CC4KVCTIQWMHLJIFMLFA'

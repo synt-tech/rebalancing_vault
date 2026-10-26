@@ -7,7 +7,8 @@ addresses and tx hashes are in [`../DEPLOYMENTS.md`](../DEPLOYMENTS.md).
 
 ```bash
 cd contracts
-cargo test -p cl_aquarius_strategy          # strategy suite (12 tests)
+cargo test -p cl_aquarius_strategy          # strategy suite (18 tests)
+cargo test -p platform                      # deployment-path suite (2 tests)
 cargo test -p defindex-vault                # patched vault suite (run inside ../defindex clone)
 cargo build --target wasm32v1-none --release --workspace
 ```
@@ -16,7 +17,7 @@ The patched DeFindex vault lives in the sibling clone `../../defindex`
 (branch `cl-vault-patch`); its suite is 108/108 including three
 under-delivery tests added by the P1/P2 patch.
 
-## Test matrix — `cl_aquarius` (12/12)
+## Test matrix — `cl_aquarius` (18/18)
 
 Mock pool / Reflector oracle / vault (`test_mocks.wasm`) plus the **real
 patched `defindex_vault.optimized.wasm`** for the integration test.
@@ -32,8 +33,24 @@ patched `defindex_vault.optimized.wasm`** for the integration test.
 | `rewards_converted_and_fee_skimmed_at_harvest` | reward claim → conversion swap at oracle-derived min-out → fee cut from swap output |
 | `stale_oracle_blocks_withdraw` | oracle age > `max_oracle_age` reverts oracle-checked paths |
 | `claim_fees_permissionless_pays_resolved_recipient` | anyone can trigger payout; destination is resolved on-chain, never caller-chosen |
+| `rewards_below_min_swap_stay_unclaimed` | below `min_reward_swap` rewards stay unclaimed pool-side (pre-claim gate — no stranded custody dust); none land in strategy custody |
+| `unclaimed_rewards_excluded_from_balance` | pending rewards do not move `balance()` — exiting holders can't be paid for forfeited rewards |
+| `withdraw_does_not_claim_rewards` | withdrawal never calls `pool.claim` — rewards forfeit to remaining holders |
+| `expired_plan_is_rejected` | `expiry < ledger time` → harvest error |
+| `cooldown_blocks_second_harvest` | second harvest inside `cooldown_secs` fails; succeeds again past the window |
+| `fee_legs_sum_exactly` | platform+operator legs sum exactly to `perf_fee_bps` of claimed income on both token legs; 50/50 split is exact |
 | `vault_integration_deposit_invest_withdraw` | **real patched vault WASM**: deposit → keeper `Invest` → strategy pull → withdraw-all through the P2 actual-delivery path |
 | `gen_swapplan_xdr`, `decode_plan_from_hex` | SwapPlan XDR encode/decode helpers for keeper tooling |
+
+## Test matrix — `platform` (2/2)
+
+Real `defindex_factory.wasm` + `defindex_vault.optimized.wasm` + registry,
+null-router, strategy-template and mock-pool WASMs.
+
+| Test | Verifies |
+|---|---|
+| `create_vault_deploys_binds_and_runs_deposit` | audit residual #1: `create_vault` → `deploy_strategy` → `create_defindex_vault` → `bind_vault` E2E — vault roles pinned (EmergencyManager=platform, Manager/FeeReceiver=caller, RebalanceManager=keeper), `init_args[2..3]` junk overridden by registry pinning, strategy bound with provenance recorded, live deposit through the created vault |
+| `deploy_rejects_unlisted_pool` | audit residual A9: pool not in `Venues` → deploy reverts |
 
 ## Testnet smoke environment (verified flows)
 
@@ -65,10 +82,10 @@ pool/oracle fixtures:
 - **Under-delivery through the vault** — `leaky_strategy` covers it in
   the defindex clone; an equivalent cl_aquarius-side case would exercise
   the P2 `min_amounts_out`-on-delivered check end-to-end.
-- **Plan rejection cases**: non-allowlisted venue, `expiry` past,
-  out_min violating oracle-derived bound, tick range outside
-  `range_min_bps`/`range_max_bps`, `|new_tick − ref_tick| > tick_cap_bps`.
-- **Cooldown** second-harvest rejection + success after `cooldown_secs`.
+- **Plan rejection cases**: non-allowlisted venue, out_min violating the
+  oracle-derived bound, tick range outside
+  `range_min_bps`/`range_max_bps`, `|new_tick − ref_tick| > tick_cap_bps`,
+  > `MAX_SWAP_STEPS` hops. (Expired plans and the cooldown are covered.)
 - **Loss budget** — consecutive-loss accumulation within the window and
   window reset.
 - **Atomic revert** — mid-harvest failure (e.g. swap step reverting)

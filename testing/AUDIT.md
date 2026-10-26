@@ -72,6 +72,19 @@ Read together with `../DEPLOYMENTS.md` (deployed addresses) and
   under-delivery is borne by the withdrawer via `min_amounts_out`, not
   socialized across holders (P2).
 
+## Resolved since first review
+
+- ~~`min_reward_swap` gate ran post-claim, stranding below-threshold
+  rewards as unvalued custody dust that could never retry.~~ Fixed: the
+  gate now reads `get_user_reward` and skips claiming entirely below the
+  threshold — rewards accrue pool-side. (`rewards_below_min_swap_stay_unclaimed`)
+- ~~Deployment path untested (residual #1).~~ Covered:
+  `platform/src/test.rs` runs `create_vault` E2E against real
+  factory+vault WASMs with junk `init_args[2..3]` proving pinning.
+- ~~§9 reward/edge cases untested.~~ Covered: unclaimed-excluded-from-
+  `balance()`, withdraw-never-claims, expired plan, cooldown + recovery,
+  fee-leg conservation.
+
 ## Known weaknesses / follow-ups
 
 - [ ] Cooldown breach returns `NotAuthorized`; should be a distinct error code.
@@ -100,6 +113,14 @@ Read together with `../DEPLOYMENTS.md` (deployed addresses) and
 - [ ] `platform.pause_strategy`/`unpause_strategy`/`rescue_vault` are
       admin-only but their auth flow on-chain is exercised only via
       EmergencyManager role — add testnet verification.
+- [ ] A missing `reward_token` oracle price aborts `harvest` entirely
+      (`claim_and_convert_rewards` propagates) even though the managed-pool
+      band check already passed — reward conversion is opportunistic and
+      could be made failure-isolated if that proves too strict.
+- [ ] Fee receiver without a pool-token trustline and AQUA conversion
+      under-delivering below oracle min-out — not reproducible with the
+      current mocks (SAC trustlines always exist in tests; the mock pool
+      always pays `out_min`). Needs a mock knob or fork test.
 
 ## Not yet audited
 

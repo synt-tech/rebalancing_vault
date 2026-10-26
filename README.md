@@ -1,4 +1,4 @@
-# hackmeridian_rebalancing_vault
+# Y.A.R.V. — yet-to-be-named automated rebalancing vaults
 
 Rebalancing vaults for Stellar (Soroban) concentrated-liquidity pools.
 HackMeridian project workspace — this file is the living project doc;

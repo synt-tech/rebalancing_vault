@@ -25,7 +25,7 @@ earns nothing — while holding only the losing token.
 shot: 02_solution.png
 dur: 12
 caption: Deposit either pool token. The vault does the rest.
-voice: clUSDC is a share-token vault on DeFindex. Deposit either pool
+voice: Yarv is a share-token vault on DeFindex. Deposit either pool
 token — the vault swaps it into place for you — and the strategy manages
 the Aquarius concentrated position.
 

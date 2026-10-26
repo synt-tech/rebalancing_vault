@@ -15,6 +15,7 @@ from pathlib import Path
 
 from pptx import Presentation
 from pptx.oxml.ns import qn
+from pptx.dml.color import RGBColor
 from pptx.util import Emu, Pt
 
 ROOT = Path(__file__).resolve().parent
@@ -122,9 +123,9 @@ def roles(slide):
 CONTENT = {
     "cover": dict(
         pill="STELLAR COMPOSED · MADE TO MOVE",
-        title=["CL VAULTS", "FOR STELLAR"],
+        title=["Y.A.R.V."],
         tagline="concentrated liquidity for the lazy (and everyone else)",
-        mid="live on Stellar testnet",
+        mid="yet-to-be-named automated rebalancing vaults — live on Stellar testnet",
     ),
     "problem": dict(
         title="THE PROBLEM",
@@ -185,15 +186,16 @@ CONTENT = {
     "proof": dict(
         title="PROGRESS & PROOF",
         lead="The whole share-token + platform layer shipped this weekend.",
+        body_scale=0.72,
         body=[
-            "New this weekend: cl_aquarius, strategy_registry, platform,",
-            "null_router, test suite, full testnet deployment — 6",
-            "contracts. Verified on-chain: create_vault → deposit →",
-            "harvest (live position deploy, reward conversion, fee",
-            "skim event) → withdraw — tx hashes in DEPLOYMENTS.md.",
-            "Testing: 18 snapshot tests + real-vault E2E, scout-audit",
-            "37 → 0, fuzz 0 crashes — plus a fork test replaying the",
-            "real mainnet pool + Reflector from a ledger snapshot.",
+            "New this weekend: six contracts live on Stellar testnet —",
+            "strategy, registry, platform, routing, test scaffolding.",
+            "Verified on-chain: create → deposit → harvest → withdraw;",
+            "harvest really deployed a CL position, converted rewards",
+            "and skimmed the fee — hashes in DEPLOYMENTS.md.",
+            "Tested hard: 18 scenario tests + real-vault end-to-end,",
+            "37 audit warnings → 0, fuzzing clean — plus a replay of",
+            "the real mainnet pool and oracle from a chain snapshot.",
         ],
         strip="👉 Prior work disclosed: previously developed offchain rebalancing algorithm, and expanded it to a basic rebalancing vault proof-of-concept (testnet Oct 2) — the new layer is all this weekend.",
     ),
@@ -270,6 +272,13 @@ def main():
                     set_text(sh, f"PLATFORM 01 / {len(KEYS):02d}")
                 elif "October 2026" in t:
                     set_text(sh, "October 2026 · Lisbon")
+            if c.get("mid"):
+                sub = slide.shapes.add_textbox(IN(1.05), IN(5.5),
+                                               IN(12.0), IN(0.6))
+                r0 = sub.text_frame.paragraphs[0].add_run()
+                r0.text = c["mid"]
+                r0.font.size = Pt(26)
+                r0.font.color.rgb = RGBColor(0xFF, 0xD2, 0x3F)
             continue
         if "platform" in r:
             set_text(r["platform"], f"PLATFORM {i + 1:02d} / {len(KEYS):02d}")

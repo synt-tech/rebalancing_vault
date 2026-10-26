@@ -16,6 +16,8 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.oxml.ns import qn
 from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Emu, Pt
 
 ROOT = Path(__file__).resolve().parent
@@ -193,30 +195,24 @@ CONTENT = {
             "Verified on-chain: create → deposit → harvest → withdraw;",
             "harvest really deployed a CL position, converted rewards",
             "and skimmed the fee — hashes in DEPLOYMENTS.md.",
-            "Try it: synt.tech/rebalancing_vault",
             "Tested hard: 28 scenario tests + real-vault end-to-end,",
             "37 audit warnings → 0, fuzzing clean — plus a replay of",
             "the real mainnet pool and oracle from a chain snapshot.",
         ],
-        strip="👉 Prior work disclosed: previously developed offchain rebalancing algorithm, and expanded it to a basic rebalancing vault proof-of-concept (testnet Oct 2) — the new layer is all this weekend.",
+        strip="👉 Disclosed prior work: offchain CL rebalance algo → PoC vault (Oct 2) — everything else is new.",
     ),
     "market": dict(
         title="MARKET & ROADMAP",
         lead="The vault shape that won everywhere — ported to Stellar.",
-        body_scale=0.52,
+        body_scale=0.72,
         body=[
-            "►  Won on Solana + EVM; Stellar's open slot.",
+            "Won on Solana + EVM; Stellar's open slot.",
             "Model: capped cut of position income, split",
             "platform/operator; the vault fee stays at 0.",
-            "Port all five proven rebalancing families",
-            "as strategist-operated templates:",
-            "      re-center-on-exit — re-mint band on drift",
-            "      inventory-ratio — hold asset mix (live!)",
-            "      peg-anchored — stable pairs, median peg",
-            "      signal-driven — off-chain vol-scaled plans",
-            "      no-swap reuse — park leftover, never sell",
-            "Next: testing → Sushi → mainnet live-fire →",
-            "Axis orderbook MM vaults → keeper bounties → SCF.",
+            "",
+            "Next: extensive testing → Sushi adapter →",
+            "mainnet live-fire → Axis orderbook MM",
+            "vaults → keeper bounties → SCF.",
         ],
         strip="👉 First-mover CL vault platform on Stellar — the strategy layer DeFindex itself hasn't built.",
     ),
@@ -332,6 +328,107 @@ def main():
                 slide.shapes.add_picture(str(shot), IN(11.6), IN(3.9),
                                          width=IN(w),
                                          height=IN(w * 1100 / 1700))
+
+        if key == "proof":
+            r["lead"].width = IN(9.2)
+            r["body"].width = IN(9.2)
+            r["strip"].width = IN(10.0)
+            src = ROOT / "video/shots/rebal_06_tick600_drifting.png"
+            if src.exists():
+                from PIL import Image
+                crop = ROOT / "assets/screenshots/app_live_drift.png"
+                Image.open(src).crop((470, 0, 1655, 600)).save(crop)
+                w = 8.2
+                h = w * 600 / 1185
+                pic = slide.shapes.add_picture(
+                    str(crop), IN(11.0), IN(3.85),
+                    width=IN(w), height=IN(h))
+                pic.click_action.hyperlink.address = \
+                    "https://synt.tech/rebalancing_vault"
+                url = slide.shapes.add_textbox(
+                    IN(11.0), IN(3.85 + h + 0.2), IN(8.2), IN(0.55))
+                f = font_of(r["body"])
+                run = url.text_frame.paragraphs[0].add_run()
+                run.text = "synt.tech/rebalancing_vault"
+                run.hyperlink.address = \
+                    "https://synt.tech/rebalancing_vault"
+                if f["name"]:
+                    run.font.name = f["name"]
+                run.font.size = Pt(22)
+                run.font.bold = True
+                run.font.underline = True
+                if f["color"]:
+                    run.font.color.rgb = f["color"]
+
+        if key == "market":
+            f = font_of(r["body"])
+            ink, gray = RGBColor(0x1A, 0x1A, 0x1A), RGBColor(0x66, 0x66, 0x66)
+
+            def style(run, size, bold=False, color=ink):
+                if f["name"]:
+                    run.font.name = f["name"]
+                run.font.size = Pt(size)
+                run.font.bold = bold
+                run.font.color.rgb = color
+
+            tb = slide.shapes.add_textbox(IN(13.85), IN(4.05),
+                                          IN(5.55), IN(2.4))
+            tf = tb.text_frame
+            tf.word_wrap = True
+            run = tf.paragraphs[0].add_run()
+            run.text = "THE TEMPLATE LIBRARY — 5 FAMILIES"
+            style(run, 13, bold=True)
+            for name, gloss in [
+                    ("re-center-on-exit", "re-mint the band on drift"),
+                    ("inventory-ratio", "hold an asset mix (live!)"),
+                    ("peg-anchored", "stable pairs, median peg"),
+                    ("signal-driven", "off-chain vol-scaled plans"),
+                    ("no-swap reuse", "park leftover, never sell")]:
+                p = tf.add_paragraph()
+                p.space_before = Pt(8)
+                style(p.add_run(), 15, bold=True)
+                p.runs[0].text = name
+                r2 = p.add_run()
+                r2.text = f" — {gloss}"
+                style(r2, 11.5, color=gray)
+
+            vh = slide.shapes.add_textbox(IN(13.85), IN(6.30),
+                                          IN(5.0), IN(0.4))
+            run = vh.text_frame.paragraphs[0].add_run()
+            run.text = "VENUES ON THE ROADMAP"
+            style(run, 11, bold=True, color=gray)
+
+            for i, (img, nm, st) in enumerate([
+                    ("aquarius.png", "AQUARIUS", "live on testnet"),
+                    ("sushi.png", "SUSHI V3", "adapter next"),
+                    ("axis.png", "AXIS", "orderbook MM vaults")]):
+                x = 13.85 + i * 1.85
+                logo = ROOT / "assets/logos" / img
+                if not logo.exists():
+                    continue
+                chip = slide.shapes.add_shape(
+                    MSO_SHAPE.ROUNDED_RECTANGLE,
+                    IN(x), IN(6.70), IN(1.70), IN(1.40))
+                chip.fill.solid()
+                chip.fill.fore_color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+                chip.line.color.rgb = ink
+                chip.line.width = Pt(0.75)
+                ctf = chip.text_frame
+                ctf.word_wrap = True
+                ctf.vertical_anchor = MSO_ANCHOR.BOTTOM
+                ctf.margin_left = ctf.margin_right = IN(0.05)
+                rn = ctf.paragraphs[0].add_run()
+                rn.text = nm
+                style(rn, 10.5, bold=True)
+                ctf.paragraphs[0].alignment = PP_ALIGN.CENTER
+                p2 = ctf.add_paragraph()
+                p2.alignment = PP_ALIGN.CENTER
+                rs = p2.add_run()
+                rs.text = st
+                style(rs, 8.5, color=gray)
+                slide.shapes.add_picture(
+                    str(logo), IN(x + (1.70 - 0.55) / 2), IN(6.82),
+                    width=IN(0.55), height=IN(0.55))
 
     prs.save(OUT)
     print(f"{OUT}  {OUT.stat().st_size / 1e6:.2f} MB, {len(prs.slides.__iter__.__self__._sldIdLst)} slides")

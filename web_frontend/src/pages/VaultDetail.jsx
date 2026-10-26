@@ -120,17 +120,8 @@ export default function VaultDetail() {
   const onWithdraw = async () => {
     const sh = BigInt(Math.round(parseFloat(wdShares || '0') * 10 ** DEC))
     if (sh <= 0n) return toast({ type: 'error', text: 'enter share amount' })
-    try {
-      // preview the USDC the shares redeem for, then split: pct → XLM via second op
-      const amounts = await C.getAssetAmountsPerShares(sh, v.address)
-      const usdcOut = BigInt(Array.isArray(amounts) ? amounts[0] : amounts)
-      const swapUsdc = (usdcOut * BigInt(xlmPct)) / 100n
-      const xlmMinOut = (swapUsdc * 99n) / 100n
-      const label = xlmPct > 0 ? `withdraw ${wdShares} shares → ${100 - xlmPct}% USDC + ${xlmPct}% XLM` : `withdraw ${wdShares} shares`
-      doTx(label, (o) => C.withdrawSplit({ from: user, shares: sh, minUsdc: 0n, swapUsdc, xlmMinOut, tokIdx: d.tokIdx ?? {}, onStatus: o?.onStatus }))
-    } catch (e) {
-      toast({ type: 'error', text: `withdraw preview failed: ${e.message}` })
-    }
+    const label = xlmPct > 0 ? `withdraw ${wdShares} shares → ${100 - xlmPct}% USDC + ${xlmPct}% XLM` : `withdraw ${wdShares} shares`
+    doTx(label, (o) => C.withdrawSplit({ from: user, shares: sh, minUsdc: 0n, swapPct: xlmPct, tokIdx: d.tokIdx ?? {}, onStatus: o?.onStatus }))
   }
 
   const tvl = d.managed?.[0]?.total_amount ?? d.assets?.[0]?.total_amount

@@ -91,9 +91,33 @@ export async function depositZap({ from, token, amount, outMin, tokIdx, onStatus
 
 // Withdraw shares → USDC lands at `from`; an optional second op swaps a chosen
 // fraction of it to XLM — user picks the split, still one atomic tx.
-// swapUsdc = USDC amount (stroops) to convert to XLM after withdrawal.
-export async function withdrawSplit({ from, shares, minUsdc, swapUsdc, xlmMinOut, tokIdx, onStatus }) {
-  const ops = [withdrawOp(from, shares, minUsdc)]
-  if (swapUsdc > 0n) ops.push(swapOp(from, tokIdx.usdc, tokIdx.xlm, swapUsdc, xlmMinOut))
+// swapPct = percent (0..100) of the withdrawn USDC to convert to XLM.
+// Everything is sized off a withdraw SIMULATION, not the NAV preview:
+// get_asset_amounts_per_shares prices shares at oracle NAV, but the real
+// unwind eats pool slippage (~5.5x less on the thin mock pool), so a swap leg
+// sized on the preview would spend USDC the user never receives — reverts on
+// real SACs once balance checks apply. We floor withdraw's min_amounts_out at
+// 99.5% of the simulated payout and size the swap under that floor: a
+// last-second state change then reverts at the withdraw's own min-out instead
+// of over-spending at the swap.
+export async function withdrawSplit({ from, shares, minUsdc, swapPct, tokIdx, onStatus, vault = VAULT.address }) {
+  const simOut = await simulateView(vault, 'withdraw', [
+    i128(shares), vecI128([minUsdc ?? 0]), addr(from),
+  ])
+  const usdcOut = BigInt(Array.isArray(simOut) ? simOut[0] : simOut)
+  const floor = (usdcOut * 995n) / 1000n
+  const minOut = BigInt(minUsdc ?? 0n) > floor ? BigInt(minUsdc) : floor
+
+  const ops = [withdrawOp(from, shares, minOut, vault)]
+  const pct = Math.round(Number(swapPct) || 0)
+  if (pct > 0) {
+    if (!(tokIdx?.usdc >= 0 && tokIdx?.xlm >= 0)) throw new Error('pool token indices unavailable')
+    const swapUsdc = (floor * BigInt(pct)) / 100n
+    if (swapUsdc > 0n) {
+      const est = await estimatePoolSwap(tokIdx.usdc, tokIdx.xlm, swapUsdc)
+      const xlmMinOut = (BigInt(est ?? swapUsdc) * 99n) / 100n
+      ops.push(swapOp(from, tokIdx.usdc, tokIdx.xlm, swapUsdc, xlmMinOut))
+    }
+  }
   return submitOps({ from, ops, onStatus })
 }

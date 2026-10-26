@@ -179,7 +179,7 @@ CONTENT = {
             "Atomic unwind → swap → re-mint in ONE transaction; loss-",
             "budget window, stale-oracle gates, emergency_exit.",
         ],
-        strip="👉 13-field on-chain Policy — the strictest in its class (Charm: 6 params, Gamma: trust-the-owner).",
+        strip="👉 14-field on-chain Policy — the strictest in its class (Charm: 5 params, Gamma: trust-the-owner).",
     ),
     "proof": dict(
         title="PROGRESS & PROOF",

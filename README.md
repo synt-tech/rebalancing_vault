@@ -196,7 +196,7 @@ deployment, and all presentation materials.
 | `audit/` | static-analysis + audit notes |
 | `web_frontend/` | the vault UI — Vite/React, HashRouter, Stellar Wallets Kit |
 | `DEPLOYMENTS.md` | full testnet deployment record — addresses, WASM hashes, tx hashes, ops notes |
-| `video/` | demo video (`out.mp4` is gitignored; `script.md` + `build.py` reproduce it) |
+| `video/` | demo video (`out.mp4` included; `script.md` + `build.py` reproduce it) |
 | `assets/` | screenshots + logos |
 | `pitch_deck.pptx` | submission deck (gitignored output; `build_deck.py` + `deck_template.pptx` reproduce it) |
 

@@ -4,6 +4,7 @@ video/audio/
 video/segs/
 video/shots/ph_*.png
 video/out.mp4
+!video/out.mp4
 pitch_deck.pptx
 pitch_deck.pdf
 !pitch_deck.pdf

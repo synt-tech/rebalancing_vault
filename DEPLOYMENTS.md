@@ -56,6 +56,9 @@ v3 vault (`CBOOPM4W…`/`CBBG2JYT…`, template ea0f490b — auth fix):
 - deposit → invest → **harvest with live position deploy** (SwapPlan XDR, ticks
   [-100,100], `authorize_as_current_contract` covering pool token pulls) — `0ce3c9a8…`
 - `vault.withdraw` all shares through the open position → 9999999000 delivered — `d3a1e313…`
+- **reward conversion** — `set_user_reward` 2e9 AQUA → harvest claimed + swapped via
+  reward pool → 970e6 XLM out (oracle min-out 0.97×fair) → `FeeAccrued` event shows
+  15% skim split 72.75e6 platform / 72.75e6 operator — `6bd44589…`
 
 ## Notes for real-pool integration
 

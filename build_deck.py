@@ -192,7 +192,7 @@ CONTENT = {
             "Quality: 10 snapshot tests + real-vault E2E · cargo-scout-audit",
             "37 → 0 critical · 3 cargo-fuzz targets, 0 crashes.",
         ],
-        strip="👉 Prior work disclosed: private rocky-vault prototype (testnet Oct 2) — the new layer is all this weekend.",
+        strip="👉 Prior work disclosed: previously developed offchain rebalancing algorithm, and expanded it to a basic rebalancing vault proof-of-concept (testnet Oct 2) — the new layer is all this weekend.",
     ),
     "market": dict(
         title="MARKET · MODEL · ROADMAP",

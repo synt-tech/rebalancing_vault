@@ -12,6 +12,10 @@ use soroban_sdk::{
 const MOCK_WASM: &[u8] = include_bytes!("../../target/wasm32v1-none/release/test_mocks.wasm");
 
 fn make_policy(_e: &Env, venues: Vec<Address>) -> Policy {
+    make_policy_with(_e, venues, 0, 1)
+}
+
+fn make_policy_with(_e: &Env, venues: Vec<Address>, cooldown_secs: u64, min_reward_swap: i128) -> Policy {
     Policy {
         swap_allowed: venues,
         oracle_band_bps: 500,
@@ -19,13 +23,13 @@ fn make_policy(_e: &Env, venues: Vec<Address>) -> Policy {
         max_slippage_bps: 300,
         max_loss_bps_per_window: 2000,
         loss_window_secs: 86_400,
-        cooldown_secs: 0,
+        cooldown_secs,
         range_min_bps: 50,
         range_max_bps: 50_000,
         tick_cap_bps: 10_000,
         perf_fee_bps: 1500,
         platform_split_bps: 5000,
-        min_reward_swap: 1,
+        min_reward_swap,
         max_reward_age: 3_600,
     }
 }
@@ -49,6 +53,10 @@ struct Fixture {
 /// Managed pool = XLM/USDC (t0=XLM, t1=USDC, asset=USDC). Spot set so
 /// implied ratio = p_usdc/p_xlm = 1e14/4e13 = 2.5e14 → sqrtP = √2.5·2^96.
 fn setup() -> Fixture {
+    setup_with(0, 1)
+}
+
+fn setup_with(cooldown_secs: u64, min_reward_swap: i128) -> Fixture {
     let e = Env::default();
     e.cost_estimate().budget().reset_unlimited();
     e.mock_all_auths_allowing_non_root_auth();
@@ -84,7 +92,7 @@ fn setup() -> Fixture {
         e.invoke_contract::<()>(&oracle, &Symbol::new(&e, "set_price"), vec![&e, tok.into_val(&e), p.into_val(&e)]);
     }
 
-    let policy = make_policy(&e, vec![&e, pool.clone(), reward_pool.clone()]);
+    let policy = make_policy_with(&e, vec![&e, pool.clone(), reward_pool.clone()], cooldown_secs, min_reward_swap);
     let init_args: Vec<soroban_sdk::Val> = vec![&e, pool.clone().into_val(&e), oracle.clone().into_val(&e), vault.clone().into_val(&e), treasury.clone().into_val(&e), policy.into_val(&e), aqua.clone().into_val(&e), reward_pool.clone().into_val(&e)];
     let strat_addr = e.register(ClAquarius, (usdc.clone(), init_args));
     let strategy = ClAquariusClient::new(&e, &strat_addr);
@@ -334,6 +342,105 @@ fn stale_oracle_blocks_withdraw() {
     // jump ledger forward past max_oracle_age (600s)
     f.e.ledger().set_timestamp(1_700_000_000 + 700);
     assert!(f.strategy.try_withdraw(&1_000_000_000, &f.vault, &f.vault).is_err());
+}
+
+/// §9 edge: rewards below `min_reward_swap` stay UNCLAIMED in the pool —
+/// not stranded as unvalued dust in strategy custody — and cross the gate
+/// on a later harvest.
+#[test]
+fn rewards_below_min_swap_stay_unclaimed() {
+    let f = setup_with(0, 10_000);
+    mint(&f.e, &f.usdc, &f.vault, 10_000_000_000);
+    f.strategy.deposit(&10_000_000_000, &f.vault);
+    // pending 100 AQUA ≈ 100×0.2 = 20 asset units < 10_000 → skip claim
+    f.e.invoke_contract::<()>(&f.pool, &Symbol::new(&f.e, "set_user_reward"),
+        vec![&f.e, f.strategy.address.clone().into_val(&f.e), 100u128.into_val(&f.e)]);
+    let plan = SwapPlan { steps: Vec::new(&f.e), ref_tick: 0, expiry: 1_800_000_000,
+        new_range: RangeSpec{tick_lower:-100, tick_upper:100} };
+    f.strategy.harvest(&f.keeper, &Some(plan.to_xdr(&f.e)));
+    let pending: u128 = f.e.invoke_contract(&f.pool, &Symbol::new(&f.e, "get_user_reward"),
+        vec![&f.e, f.strategy.address.clone().into_val(&f.e)]);
+    assert_eq!(pending, 100, "below-gate reward must stay unclaimed in the pool");
+    assert_eq!(bal(&f.e, &f.aqua, &f.strategy.address), 0, "no dust in strategy custody");
+}
+
+/// §9 edge: unclaimed rewards never count toward `balance()` — an exiting
+/// holder can't be paid for rewards they forfeit.
+#[test]
+fn unclaimed_rewards_excluded_from_balance() {
+    let f = setup();
+    mint(&f.e, &f.usdc, &f.vault, 10_000_000_000);
+    f.strategy.deposit(&10_000_000_000, &f.vault);
+    let before = f.strategy.balance(&f.vault);
+    f.e.invoke_contract::<()>(&f.pool, &Symbol::new(&f.e, "set_user_reward"),
+        vec![&f.e, f.strategy.address.clone().into_val(&f.e), 5_000_000_000u128.into_val(&f.e)]);
+    assert_eq!(f.strategy.balance(&f.vault), before, "unclaimed rewards must not move balance()");
+}
+
+/// §9 edge: a withdrawal must not claim rewards — rewards forfeit to the
+/// remaining holders and are only claimed at harvest.
+#[test]
+fn withdraw_does_not_claim_rewards() {
+    let f = setup();
+    mint(&f.e, &f.usdc, &f.vault, 10_000_000_000);
+    f.strategy.deposit(&10_000_000_000, &f.vault);
+    f.e.invoke_contract::<()>(&f.pool, &Symbol::new(&f.e, "set_user_reward"),
+        vec![&f.e, f.strategy.address.clone().into_val(&f.e), 5_000_000_000u128.into_val(&f.e)]);
+    f.strategy.withdraw(&4_000_000_000, &f.vault, &f.vault);
+    let pending: u128 = f.e.invoke_contract(&f.pool, &Symbol::new(&f.e, "get_user_reward"),
+        vec![&f.e, f.strategy.address.clone().into_val(&f.e)]);
+    assert_eq!(pending, 5_000_000_000, "withdraw must never claim rewards");
+}
+
+#[test]
+fn expired_plan_is_rejected() {
+    let f = setup();
+    let plan = SwapPlan { steps: Vec::new(&f.e), ref_tick: 0, expiry: 1_600_000_000,
+        new_range: RangeSpec{tick_lower:-100, tick_upper:100} }; // expiry < ledger 1_700_000_000
+    assert!(f.strategy.try_harvest(&f.keeper, &Some(plan.to_xdr(&f.e))).is_err());
+}
+
+#[test]
+fn cooldown_blocks_second_harvest() {
+    let f = setup_with(120, 1);
+    mint(&f.e, &f.usdc, &f.vault, 10_000_000_000);
+    f.strategy.deposit(&10_000_000_000, &f.vault);
+    let plan = SwapPlan { steps: Vec::new(&f.e), ref_tick: 0, expiry: 1_800_000_000,
+        new_range: RangeSpec{tick_lower:-100, tick_upper:100} };
+    f.strategy.harvest(&f.keeper, &Some(plan.clone().to_xdr(&f.e)));
+    assert!(f.strategy.try_harvest(&f.keeper, &Some(plan.clone().to_xdr(&f.e))).is_err(),
+        "second harvest inside the cooldown must fail");
+    // past the window it runs again (prices still fresh: +121 < 600s)
+    f.e.ledger().set_timestamp(1_700_000_000 + 121);
+    f.strategy.harvest(&f.keeper, &Some(plan.to_xdr(&f.e)));
+}
+
+/// §9 edge: platform + operator legs sum exactly to the performance fee —
+/// no rounding drift, 50/50 split splits evenly.
+#[test]
+fn fee_legs_sum_exactly() {
+    let f = setup();
+    mint(&f.e, &f.usdc, &f.vault, 10_000_000_000);
+    f.strategy.deposit(&10_000_000_000, &f.vault);
+    let plan = SwapPlan { steps: Vec::new(&f.e), ref_tick: 0, expiry: 1_800_000_000,
+        new_range: RangeSpec{tick_lower:-100, tick_upper:100} };
+    f.strategy.harvest(&f.keeper, &Some(plan.to_xdr(&f.e))); // opens the position
+    // accrue claimable fees [t0,t1] = 2e9 XLM + 1e9 USDC; fund the pool
+    mint(&f.e, &f.usdc, &f.pool, 1_000_000_000);
+    mint(&f.e, &f.xlm, &f.pool, 2_000_000_000);
+    f.e.invoke_contract::<()>(&f.pool, &Symbol::new(&f.e, "set_position_fees"),
+        vec![&f.e, (-100i32).into_val(&f.e), 100i32.into_val(&f.e),
+             2_000_000_000u128.into_val(&f.e), 1_000_000_000u128.into_val(&f.e)]);
+    let plan2 = SwapPlan { steps: Vec::new(&f.e), ref_tick: 0, expiry: 1_800_000_000,
+        new_range: RangeSpec{tick_lower:0, tick_upper:0} }; // no redeploy
+    f.strategy.harvest(&f.keeper, &Some(plan2.to_xdr(&f.e)));
+    let p0 = f.strategy.claim_fees(&f.treasury, &0u32, &f.xlm);
+    let o0 = f.strategy.claim_fees(&f.treasury, &1u32, &f.xlm);
+    let p1 = f.strategy.claim_fees(&f.treasury, &0u32, &f.usdc);
+    let o1 = f.strategy.claim_fees(&f.treasury, &1u32, &f.usdc);
+    assert_eq!(p0 + o0, 2_000_000_000 * 1500 / 10_000, "fee legs must sum to perf fee on t0");
+    assert_eq!(p1 + o1, 1_000_000_000 * 1500 / 10_000, "fee legs must sum to perf fee on t1");
+    assert_eq!(p0, o0, "50% platform split splits evenly");
 }
 
 #[test]

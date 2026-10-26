@@ -204,3 +204,5 @@ impl Platform {
         e.invoke_contract::<()>(&vault, &Symbol::new(&e, "rescue"), args);
     }
 }
+
+mod test;

@@ -472,28 +472,30 @@ fn claim_and_skim_lp_fees(e: &Env, pool_addr: &Address, policy: &Policy) {
 
 /// Claim pool rewards (e.g. AQUA) and convert 100% into the managed-pool
 /// token it pairs against in `reward_pool`, cutting `perf_fee_bps` from the
-/// swap output. Skips conversion below `min_reward_swap` (claimed tokens
-/// stay as unvalued dust — still excluded from `balance()`, consistent with
-/// the reward exclusion rule).
+/// swap output. The `min_reward_swap` dust gate runs BEFORE claiming —
+/// below-threshold rewards stay unclaimed in the pool (not stranded as
+/// unvalued dust in strategy custody) and keep accruing until worth a swap.
 fn claim_and_convert_rewards(e: &Env, pool_addr: &Address, asset: &Address, policy: &Policy) -> Result<(), StrategyError> {
     let pool = ClPoolClient::new(e, pool_addr);
     let me = e.current_contract_address();
-    if pool.get_user_reward(&me) == 0 {
-        return Ok(());
-    }
-    let claimed = pool.claim(&me) as i128; // returns claimed amount
-    if claimed <= 0 {
+    let pending = pool.get_user_reward(&me) as i128;
+    if pending <= 0 {
         return Ok(());
     }
     let reward_tok: Address = get(e, &DataKey::RewardToken);
     let reward_pool_addr: Address = get(e, &DataKey::RewardPool);
     let oracle: Address = get(e, &DataKey::Oracle);
 
-    // Dust gate: skip if claimed value < min_reward_swap (in asset units).
+    // Dust gate on the UNCLAIMED amount: skip claiming entirely below the
+    // threshold so the reward stays pool-side and can cross it later.
     let p_rew = oracle_price(e, &oracle, &reward_tok, policy)?;
     let p_asset = oracle_price(e, &oracle, asset, policy)?;
-    let value_asset = claimed * p_rew / p_asset;
-    if value_asset < policy.min_reward_swap {
+    if pending * p_rew / p_asset < policy.min_reward_swap {
+        return Ok(());
+    }
+
+    let claimed = pool.claim(&me) as i128; // returns claimed amount
+    if claimed <= 0 {
         return Ok(());
     }
 

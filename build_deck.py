@@ -213,17 +213,17 @@ CONTENT = {
         strip="👉 First-mover CL vault platform on Stellar — the strategy layer DeFindex itself hasn't built.",
     ),
     "team": dict(
-        title="THE TEAM",
-        lead="Builders — and a disclosed AI toolchain.",
+        title="THE BUILDER",
+        lead="One builder — and a disclosed AI toolchain.",
         body=[
-            "<name> — protocol design, strategy contract, deployment",
-            "<name> — research corpus, economics, presentation",
-            "(fill in real members, max 3 lines each)",
-            "AI tooling disclosed: Devin agents for research, code, tests,",
-            "docs and deck/video assets — architecture and security",
-            "decisions are ours.",
+            "Trond — years of market making with synt.tech on the",
+            "Stellar DEX; already operating automated CL rebalancing",
+            "with an offchain algo. Architecture & security decisions.",
+            "AI tooling disclosed: Devin SWE-2 Max agents for research,",
+            "code, tests, docs and deck/video assets — OMP DeepSeek V4.1",
+            "Flash 1017 + Kimi 3.1 for code auditing.",
         ],
-        strip="👉 Repo · testnet deployment · demo video — links in the submission. Judges: ask us anything on Discord.",
+        strip="👉 Repo · testnet deployment · demo video — links in the submission. Judges: ask me anything on Discord.",
     ),
 }
 
@@ -238,7 +238,7 @@ NEXT_LABEL = {"problem": "NEXT ▸ THE SOLUTION",
               "composed": "NEXT ▸ TECHNICAL WORKFLOW",
               "workflow": "NEXT ▸ PROGRESS & PROOF",
               "proof": "NEXT ▸ MARKET & MODEL",
-              "market": "NEXT ▸ THE TEAM",
+              "market": "NEXT ▸ THE BUILDER",
               "team": "FINAL STOP"}
 STEP_TOTAL = len(KEYS) - 1
 
